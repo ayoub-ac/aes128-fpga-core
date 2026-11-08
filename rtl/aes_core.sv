@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
 // AES-128 iterative core (FIPS-197).
 //
-// Architecture: 1 round per cycle, shared encrypt/decrypt datapath.
-// Latency: ~12 cycles per block (1 cycle to register inputs + key, 11 round cycles,
-//          output asserted on the cycle after the last round).
-// Resources: ~1.5k LUTs on iCE40, ~1k on Artix-7 (estimate; final synth varies).
+// Architecture: 1 round per cycle, shared encrypt/decrypt datapath. The 11
+// round keys are stored, so a block with the same key as the previous one
+// skips the key expansion.
+// Latency from the accepting clock edge to valid_o: 11 cycles when key_i
+// equals the previous block's key, 21 cycles otherwise (10 cycles of key
+// expansion). The first block after reset always expands the key.
 //
 // Handshake:
 //   * Master presents key_i, data_i, encrypt_i and asserts valid_i.
@@ -59,9 +61,13 @@ module aes_core (
   logic [127:0] state_reg_q, state_reg_d;
   logic [127:0] data_out_q, data_out_d;
 
-  // Round-key storage: 11 keys x 128 bits.
+  // Round-key storage: 11 keys x 128 bits. keys_valid_q: rk_q[0..10] hold the
+  // full schedule of the key in rk_q[0].
   logic [127:0] rk_q [0:10];
   logic [127:0] rk_d [0:10];
+  logic         keys_valid_q, keys_valid_d;
+  logic         key_hit;
+  assign key_hit = keys_valid_q && (key_i == rk_q[0]);
 
   // ---------- Key expansion combinational --------------------------------------
   // The new round key for round (round_q + 1) given rk_q[round_q].
@@ -124,12 +130,19 @@ module aes_core (
     round_d     = round_q;
     state_reg_d = state_reg_q;
     data_out_d  = data_out_q;
+    keys_valid_d = keys_valid_q;
     for (int i = 0; i < 11; i++) rk_d[i] = rk_q[i];
 
     unique case (state_q)
       S_IDLE: begin
-        if (valid_i) begin
+        if (valid_i && key_hit) begin
+          // Same key: reuse the stored schedule and apply the first AddRoundKey.
+          state_reg_d = data_i ^ (encrypt_i ? rk_q[0] : rk_q[10]);
+          round_d = 4'd0;
+          state_d = S_RUN;
+        end else if (valid_i) begin
           // Capture key (rk[0]) and data; pre-AddRoundKey.
+          keys_valid_d = 1'b0;
           rk_d[0] = key_i;
           for (int i = 1; i < 11; i++) rk_d[i] = '0;
           if (encrypt_i) begin
@@ -154,6 +167,7 @@ module aes_core (
           if (!encrypt_q) begin
             state_reg_d = state_reg_q ^ next_rk; // initial AddRoundKey for decrypt
           end
+          keys_valid_d = 1'b1;
           round_d = 4'd0;
           state_d = S_RUN;
         end else begin
@@ -192,12 +206,14 @@ module aes_core (
       encrypt_q   <= 1'b0;
       state_reg_q <= '0;
       data_out_q  <= '0;
+      keys_valid_q <= 1'b0;
       for (int i = 0; i < 11; i++) rk_q[i] <= '0;
     end else begin
       state_q     <= state_d;
       round_q     <= round_d;
       state_reg_q <= state_reg_d;
       data_out_q  <= data_out_d;
+      keys_valid_q <= keys_valid_d;
       for (int i = 0; i < 11; i++) rk_q[i] <= rk_d[i];
       if (state_q == S_IDLE && valid_i) encrypt_q <= encrypt_i;
     end
