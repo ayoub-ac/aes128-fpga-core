@@ -49,7 +49,7 @@ TB_SECURE_CPP := tb/sim_secure.cpp
 
 VFLAGS := -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-HIERBLOCK -Wno-UNOPTPUBLIC
 
-.PHONY: lint sim test sim-secure test-secure test-all test-vectors \
+.PHONY: lint sim test sim-secure test-secure test-all test-vectors waves \
         synth synth-pipelined synth-secure synth_report \
         vhdl-test clean regen_vectors
 
@@ -109,6 +109,22 @@ test-vectors: build/vectors.hex
 	    (cd build && ./vec_$$v/sim) | tee build/vec_$$v.log | grep -E '^(FAIL|STREAM|RESULT)'; \
 	    grep -q 'errors=0 ' build/vec_$$v.log || { echo "VECTOR TESTS FAILED (variant $$v)"; exit 1; }; \
 	done; echo "VECTOR TESTS PASSED"
+
+# ---------- Timing plots ----------------------------------------------------
+# tb/tb_waves.sv runs three scenarios and dumps a VCD for each;
+# scripts/plot_waves.py draws them (whole run and zoomed windows) as PNGs in
+# build/waves. PLOT_PYTHON needs matplotlib and vcdvcd.
+PLOT_PYTHON ?= $(PYTHON)
+
+waves:
+	@mkdir -p build/waves
+	@set -e; for s in 0 1 2; do \
+	    $(VERILATOR) --binary --timing --trace -Wno-fatal -Wno-lint -Wno-style --top-module tb_waves \
+	        -GSCEN=$$s -Mdir build/waves/obj_$$s -o sim tb/tb_waves.sv $(VECTOR_RTL) > build/waves/build_$$s.log; \
+	    (cd build/waves && ./obj_$$s/sim) | tee build/waves/run_$$s.log | grep -E '^(FAIL|WAVES)'; \
+	    grep -q 'errors=0' build/waves/run_$$s.log || { echo "WAVES SCENARIO $$s FAILED"; exit 1; }; \
+	done
+	$(PLOT_PYTHON) scripts/plot_waves.py build/waves build/waves
 
 # ---------- Open synthesis (Yosys) ------------------------------------------
 synth:
