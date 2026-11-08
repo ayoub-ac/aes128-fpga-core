@@ -53,7 +53,9 @@ module aes_core_cov (
   // Track valid_o history for back-pressure detection.
   logic prev_valid_o_q;
 
-  always_ff @(posedge clk_i) begin
+  // Plain always (not always_ff): the flags also get their start value in
+  // the initial block below and are sticky across resets.
+  always @(posedge clk_i) begin
     if (!rst_ni) begin
       // Reset asserted: if the FSM was busy the cycle before, count it as a
       // mid-operation reset. Coverage flags themselves are NOT cleared - they

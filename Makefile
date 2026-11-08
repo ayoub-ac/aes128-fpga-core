@@ -46,7 +46,7 @@ TB_CPP        := tb/sim_main.cpp
 TB_SECURE_TOP := tb/aes_core_secure_tb.sv
 TB_SECURE_CPP := tb/sim_secure.cpp
 
-VFLAGS := -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-HIERBLOCK
+VFLAGS := -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-HIERBLOCK -Wno-UNOPTPUBLIC
 
 .PHONY: lint sim test sim-secure test-secure test-all \
         synth synth-pipelined synth-secure synth_report \

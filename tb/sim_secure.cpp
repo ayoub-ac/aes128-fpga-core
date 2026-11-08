@@ -60,7 +60,9 @@ static U128 read_data_o(const Vaes_core_secure_tb* dut) {
     return v;
 }
 
-static void write_port(uint32_t* port, const U128& v) {
+// Wide ports are VlWide<4> on Verilator 5 and plain word arrays on older releases.
+template <typename Port>
+static void write_port(Port& port, const U128& v) {
     port[0] = v.w[0]; port[1] = v.w[1]; port[2] = v.w[2]; port[3] = v.w[3];
 }
 
