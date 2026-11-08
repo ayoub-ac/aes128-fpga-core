@@ -82,8 +82,9 @@ module tb_vectors;
       if (cycle - t0 > 200) begin fail("timeout waiting for valid_o"); return; end
       @(negedge clk); #1;
     end
-    if (cycle - t0 < lat_min[enc]) lat_min[enc] = int'(cycle - t0);
-    if (cycle - t0 > lat_max[enc]) lat_max[enc] = int'(cycle - t0);
+    // cycles from the accepting edge to the edge that raised valid_o
+    if (cycle - t0 - 1 < lat_min[enc]) lat_min[enc] = int'(cycle - t0 - 1);
+    if (cycle - t0 - 1 > lat_max[enc]) lat_max[enc] = int'(cycle - t0 - 1);
     held = data_o;
     repeat ($urandom_range(0, 3)) begin
       @(negedge clk); #1;
@@ -199,7 +200,7 @@ module tb_vectors;
     if (VARIANT == 2)
       $display("RESULT variant=%0d checks=%0d errors=%0d ", VARIANT, checks, errors);
     else
-      $display("RESULT variant=%0d checks=%0d errors=%0d enc_latency=%0d..%0d dec_latency=%0d..%0d",
+      $display("RESULT variant=%0d checks=%0d errors=%0d valid_o_after_enc=%0d..%0d valid_o_after_dec=%0d..%0d",
                VARIANT, checks, errors, lat_min[1], lat_max[1], lat_min[0], lat_max[0]);
     $finish;
   end
