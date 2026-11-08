@@ -50,9 +50,15 @@ module tb_vectors;
     if (errors <= 15) $display("FAIL %0s", what);
   endtask
 
+  // valid_i is driven at random during reset: ready_o must stay low.
   task automatic reset(input int cycles);
-    @(negedge clk); rst_ni = 0; valid_i = 0; ready_i = 0;
-    repeat (cycles) @(negedge clk);
+    @(negedge clk); rst_ni = 0; ready_i = 0;
+    repeat (cycles) begin
+      valid_i = 1'($urandom_range(0, 1)); key_i = rnd128(); data_i = rnd128();
+      @(negedge clk); #1;
+      if (ready_o) fail("ready_o high during reset");
+    end
+    valid_i = 0;
     rst_ni = 1;
   endtask
 

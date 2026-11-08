@@ -124,7 +124,7 @@ module aes_core_secure (
   // data_o is the unmasked output (revealed only on completion).
   assign data_o  = data_out_q;
   assign valid_o = (state_q == S_DONE);
-  assign ready_o = (state_q == S_IDLE) && !fault_q;
+  assign ready_o = (state_q == S_IDLE) && !fault_q && rst_ni;  // no transfer while in reset
   assign fault_o = fault_q;
 
   // ---------- Round counter sanity (fault detector) --------------------------

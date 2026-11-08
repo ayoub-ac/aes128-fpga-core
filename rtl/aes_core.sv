@@ -122,7 +122,7 @@ module aes_core (
   // ---------- Outputs --------------------------------------------------------
   assign data_o  = data_out_q;
   assign valid_o = (state_q == S_DONE);
-  assign ready_o = (state_q == S_IDLE);
+  assign ready_o = (state_q == S_IDLE) && rst_ni;  // no transfer while in reset
 
   // ---------- FSM next-state -------------------------------------------------
   always_comb begin
