@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later OR Commercial
+// SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
 // AES-128 iterative core with side-channel countermeasures (FIPS-197).
 //
 // This is a HARDENED variant of aes_core. It implements:

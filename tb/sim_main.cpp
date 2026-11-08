@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later OR Commercial
+// SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
 // Verilator C++ harness for aes_core. Drives NIST FIPS-197 / SP 800-38A
 // AES-128 test vectors against the DUT and verifies ciphertext + decrypt
 // round-trip + back-to-back throughput.

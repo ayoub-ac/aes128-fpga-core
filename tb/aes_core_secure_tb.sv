@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later OR Commercial
+// SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
 // Testbench wrapper for aes_core_secure (Verilator C++ harness drives stimulus).
 
 module aes_core_secure_tb (

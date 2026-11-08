@@ -1,6 +1,6 @@
 # Resource estimates
 
-Numbers below are from Yosys 0.33 generic synthesis (`make synth`). They are pre-place-and-route, so the vendor flow (nextpnr / Vivado / Diamond) will usually pack tighter, especially on iCE40 where SB_LUT4 + carry chains and BRAM packing reduce visible LUT count after PnR. Run `make synth` for authoritative numbers on your toolchain version.
+Numbers below are unverified estimates attributed to Yosys 0.33 generic synthesis (`make synth`); they have not been independently reproduced. They are pre-place-and-route, so the vendor flow (nextpnr / Vivado / Diamond) will usually pack tighter, especially on iCE40 where SB_LUT4 + carry chains and BRAM packing reduce visible LUT count after PnR. Run `make synth` for authoritative numbers on your toolchain version.
 
 ## Summary (post-Yosys, pre-PnR)
 
@@ -13,10 +13,11 @@ Numbers below are from Yosys 0.33 generic synthesis (`make synth`). They are pre
 
 These numbers cover the iterative MVP.
 
-## Variants (Premium tier)
+## Variants
 
-Both Premium variants share the same `aes_round` / `aes_sbox` infrastructure as
-the basic core, so the deltas below are RTL-overhead only.
+Both variants share the same `aes_round` / `aes_sbox` infrastructure as
+the basic core, so the deltas below are RTL-overhead only. All figures in this
+section are unverified estimates.
 
 ### Pipelined (`aes_core_pipelined`)
 
@@ -24,7 +25,7 @@ the basic core, so the deltas below are RTL-overhead only.
 |-----------------|-----------------|---------|-----------------|
 | Xilinx 7-series | ~23.0k LUT total | ~3.6k FF | 1 block/cycle steady-state (~22x basic) |
 
-Trade-off: ~4.2x area for ~22x throughput. Encrypt-only; decrypt falls back to
+Trade-off: ~4.2x area for ~22x throughput (unverified estimate). Encrypt-only; decrypt falls back to
 the iterative core. Schedule re-expansion is amortized by holding `ready_o` low
 during the 10-cycle expansion, so a stable key sees no per-block overhead.
 
@@ -36,33 +37,36 @@ during the 10-cycle expansion, so a stable key sees no per-block overhead.
 
 Adds ~7-8% area for state-level Boolean masking, duplicated round counter
 (fault detector), and constant-time FSM. See `SECURITY.md` for the full threat
-model. Throughput is unchanged.
+model; none of these countermeasures has been evaluated. Throughput is intended
+to be unchanged (unverified).
 
 ## Caveat on raw Yosys numbers
 
-Yosys generic synthesis in 0.33 does not always infer distributed RAM for the round-key schedule (`rk_q[0..10]` indexed by a runtime variable). On boards where it does (iCE40 UP5K above), the LUT count drops sharply. On targets where it does not (ECP5 generic flow), the dynamic mux is built out of logic and looks very large. The vendor PnR steps (nextpnr-ecp5 / Vivado) recover most of this. If you need a tight pre-PnR number on ECP5, the Premium variant adds an explicit `(* ram_style = "distributed" *)` attribute on the schedule which keeps the area within ~2k LUT4 even before PnR.
+Yosys generic synthesis in 0.33 does not always infer distributed RAM for the round-key schedule (`rk_q[0..10]` indexed by a runtime variable). On boards where it does (iCE40 UP5K above), the LUT count drops sharply. On targets where it does not (ECP5 generic flow), the dynamic mux is built out of logic and looks very large. The vendor PnR steps (nextpnr-ecp5 / Vivado) recover most of this. No variant in this repository adds an explicit `(* ram_style = "distributed" *)` attribute on the schedule; adding one is a possible way to get a tighter pre-PnR number on ECP5.
 
 ## What dominates the area
 
 - **11 round keys x 128 bits = 1408 FFs** for storing the expanded key schedule. This is by far the largest FF cost. A future "key-cached" variant can keep this and skip re-expansion when the key does not change.
 - **Two S-box LUTs** (forward and inverse) instantiated per byte lane. Encrypt and decrypt share the round, so the round logic instantiates 16 forward S-boxes (SubBytes) and 16 inverse S-boxes (InvSubBytes). Future area optimization: share S-boxes across encrypt/decrypt by switching the lookup table.
-- **MixColumns / InvMixColumns** combinational matrix. InvMixColumns coefficients {0x09, 0x0b, 0x0d, 0x0e} are decomposed into nested `xtime` chains with shared `2a, 4a, 8a` per byte, which Yosys maps to ~2-3 LUTs per coefficient byte rather than a generic GF(2^8) multiplier loop.
+- **MixColumns / InvMixColumns** combinational matrix. InvMixColumns coefficients {0x09, 0x0b, 0x0d, 0x0e} are decomposed into nested `xtime` chains with shared `2a, 4a, 8a` per byte, which Yosys is expected to map to ~2-3 LUTs per coefficient byte rather than a generic GF(2^8) multiplier loop (unverified estimate).
 
 ## What you can do to shrink it
 
-If you are area-constrained on a small iCE40, ask about the Premium variant — it includes a "byte-serial" build that processes one column per cycle, dropping LUT count by ~3x at the cost of 4x more cycles per block.
+No byte-serial build is included in this repository. A design that processes one column per cycle would trade more cycles per block for lower LUT count on a small iCE40.
 
 ## Frequency
+
+The figures below are unverified estimates; no place-and-route timing has been confirmed.
 
 - iCE40 UP5K, default toolchain (Yosys + nextpnr), no constraints: ~50 MHz typical, push to 60 MHz with retiming.
 - ECP5: ~120 MHz typical, ~150 MHz with effort.
 - Artix-7 -1 speed grade: ~150 MHz typical, ~200 MHz with effort and timing constraints.
 
-The combinational path through SubBytes -> ShiftRows -> MixColumns -> AddRoundKey is the critical path. Retiming the round-key XOR into the next stage's flop helps on Xilinx; on Yosys+nextpnr you may want to split MixColumns over two cycles for higher Fmax (this is one of the Premium variants).
+The combinational path through SubBytes -> ShiftRows -> MixColumns -> AddRoundKey is the critical path. Retiming the round-key XOR into the next stage's flop helps on Xilinx; on Yosys+nextpnr you may want to split MixColumns over two cycles for higher Fmax (no such variant is included in this repository).
 
 ## Power
 
-Roughly 5-15 mW dynamic on iCE40 UP5K at 50 MHz, depending on data activity. Static power is dominated by the FPGA itself.
+Power has not been characterized. Static power is dominated by the FPGA itself.
 
 ## How to reproduce
 

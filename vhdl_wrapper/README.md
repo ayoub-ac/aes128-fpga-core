@@ -8,11 +8,10 @@ VHDL design that does not want to touch SystemVerilog directly.
 
 **Wrapper only.** The cipher datapath (SubBytes, ShiftRows, MixColumns, key
 schedule, FSM) lives in `rtl/*.sv` and is instantiated as a SystemVerilog
-black-box. Mixed-language elaboration is supported by every commercial
-simulator and synthesiser the core has been tested against.
+black-box, so the toolchain must support mixed-language elaboration. The
+wrapper has not been tested with any simulator or synthesiser.
 
-A pure VHDL re-implementation of the cipher core is on the roadmap (Premium
-tier, scope: parity with `rtl/aes_core.sv`, including the same testbench
+A pure VHDL re-implementation of the cipher core is on the roadmap (scope: parity with `rtl/aes_core.sv`, including the same testbench
 checks). Until then, treat this directory as a binding layer, not as a
 second implementation.
 
@@ -80,8 +79,8 @@ end architecture;
 
 ## What this wrapper does NOT change
 
-* Latency, throughput, area: identical to `aes_core.sv`. There is no
-  additional pipeline stage.
+* Latency, throughput, area: intended to be identical to `aes_core.sv`
+  (unverified). There is no additional pipeline stage.
 * Endianness: bit 127 is byte 0, MSB-first, exactly as documented in
   `PORT_DESCRIPTION.md`.
 * Reset polarity: still active-low synchronous (`rst_ni`).

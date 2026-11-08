@@ -71,7 +71,7 @@ data_o     -   D   D   -
 ## Timing
 
 - **Latency**: from the cycle `valid_i && ready_o` is captured to the cycle `valid_o` rises is approximately 22 cycles in this MVP. (10 cycles to expand the key schedule, 10 cycles for cipher rounds, plus FSM transitions.)
-- **Throughput**: one block per ~22 cycles. At 50 MHz that is ~290 Mbps; at 100 MHz, ~580 Mbps.
+- **Throughput**: one block per ~22 cycles. At 50 MHz that is ~290 Mbps; at 100 MHz, ~580 Mbps (unverified estimates derived from the cycle count).
 - **Back-to-back**: yes — the master can present a new `(key, data)` on the same cycle it consumes the previous output (`valid_o && ready_i` and immediately `valid_i` for the next block).
 
 ## Reset
@@ -99,6 +99,6 @@ Single clock domain. `clk_i` clocks every flop in the design. If your system is 
 
 ## Synthesis attributes
 
-The core uses no vendor-specific attributes. It synthesizes cleanly with Yosys (`synth_ice40`, `synth_ecp5`, `synth_xilinx`) and with Vivado (default flow).
+The core uses no vendor-specific attributes. It is intended to synthesize with Yosys (`synth_ice40`, `synth_ecp5`, `synth_xilinx`) and with Vivado (default flow); not independently confirmed.
 
-The S-box and inverse-S-box are written as `case` statements; Yosys infers a LUT, Vivado infers either LUTs or a distributed-RAM ROM depending on the device. If you want them mapped to a BRAM instead, see the comment block in `aes_sbox.sv`.
+The S-box and inverse-S-box are written as `case` statements; Yosys infers a LUT, Vivado infers either LUTs or a distributed-RAM ROM depending on the device.

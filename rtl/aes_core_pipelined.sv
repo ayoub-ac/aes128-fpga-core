@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later OR Commercial
+// SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
 // AES-128 fully unrolled pipelined core (FIPS-197).
 //
 // Architecture: 11-stage pipeline (1 stage per round + initial AddRoundKey).

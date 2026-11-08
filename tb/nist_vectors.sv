@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later OR Commercial
+// SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
 // NIST FIPS-197 / NIST SP 800-38A AES-128 reference test vectors.
 //
 // This file is informational and consumed by the C++ Verilator harness
