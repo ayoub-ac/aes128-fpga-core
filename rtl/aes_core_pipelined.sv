@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
-// AES-128 fully unrolled pipelined core (FIPS-197).
+// AES-128 fully unrolled pipelined core (FIPS-197), encrypt only.
 //
-// Architecture: 11-stage pipeline (1 stage per round + initial AddRoundKey).
-//   Steady-state throughput: one block per cycle.
-//   Latency: 11 cycles (initial ARK + 10 rounds) plus 1 cycle for input register.
-//   The key schedule is precomputed once when key changes; while the schedule is
-//   being built, valid_i is held back via ready_o.
+// Architecture: stage 0 registers data ^ round key 0, stages 1..10 each
+// register one round. With a stable key the core accepts one block per cycle
+// and valid_o rises 10 cycles after the block is accepted.
 //
-// Trade-off: ~10x area vs the iterative core, ~10x throughput.
+// Key schedule: the 11 round keys are expanded once per key, over 10 cycles.
+// A block with a key that differs from the loaded one is not accepted
+// (ready_o low) until the pipeline has drained, so blocks already in flight
+// finish with their own key; then the new schedule is expanded and the block
+// is accepted. A key change therefore costs the drain time plus 10 cycles.
 //
-// Limitation in this build: encrypt-only. Decrypt uses the iterative core.
-// (The pipelined decrypt path is symmetric but doubles the area again.)
-//
-// Same I/O contract as aes_core, except:
-//   * encrypt_i is ignored (always encrypt). Provided to keep the port wide-compatible.
-//   * latency is 11 cycles when key is stable; +10 cycles only on key change.
+// Handshake: a block is accepted on a rising edge where valid_i && ready_o.
+// ready_o depends combinationally on key_i and ready_i.
+// data_o is held while valid_o && !ready_i (the whole pipeline stalls).
+// encrypt_i is ignored.
 
 module aes_core_pipelined (
   input  logic         clk_i,
@@ -29,20 +29,9 @@ module aes_core_pipelined (
   input  logic         ready_i
 );
 
-  // unused — silence linter
-  logic                unused_encrypt;
+  logic unused_encrypt;
   assign unused_encrypt = encrypt_i;
 
-  // ---------- Round-key schedule (precomputed) -----------------------------
-  // 11 round keys. When key_i changes (detected by compare to last accepted),
-  // we expand all 10 keys over 10 cycles and stall valid_i.
-  logic [127:0] rk [0:10];
-  logic [127:0] last_key_q;
-  logic         schedule_ready_q;
-  logic [3:0]   expand_q;
-  logic [127:0] expand_rcon;
-
-  // Same rcon table as iterative core
   function automatic logic [7:0] rcon_byte (input logic [3:0] r);
     case (r)
       4'd1: rcon_byte = 8'h01; 4'd2: rcon_byte = 8'h02; 4'd3: rcon_byte = 8'h04;
@@ -52,21 +41,23 @@ module aes_core_pipelined (
     endcase
   endfunction
 
-  logic [127:0] kx_in, kx_out;
-  assign kx_in = rk[expand_q];
+  // ---------- Round-key schedule --------------------------------------------
+  logic [127:0] rk [0:10];
+  logic         key_loaded_q;   // rk[0] holds a key accepted since reset
+  logic         expanding_q;    // rk[1..10] being computed
+  logic [3:0]   expand_q;
+
+  logic [127:0] kx_out;
   aes_key_expand u_kx (
-    .round_key_i (kx_in),
+    .round_key_i (rk[expand_q]),
     .rcon_i      (rcon_byte(expand_q + 4'd1)),
     .round_key_o (kx_out)
   );
 
-  // ---------- Pipeline registers --------------------------------------------
-  // stage 0: input + AddRoundKey with rk[0] (registered)
-  // stages 1..10: full round (registered output)
+  // ---------- Pipeline -------------------------------------------------------
   logic [127:0] stage_q [0:10];
   logic         stage_v [0:10];
 
-  // Combinational round outputs for stages 1..10
   logic [127:0] round_out [1:10];
   genvar gs;
   generate
@@ -81,55 +72,50 @@ module aes_core_pipelined (
     end
   endgenerate
 
-  // ---------- Output ---------------------------------------------------------
+  logic pipe_empty;
+  always_comb begin
+    pipe_empty = 1'b1;
+    for (int i = 0; i <= 10; i++) if (stage_v[i]) pipe_empty = 1'b0;
+  end
+
+  logic advance, key_match, start_expand;
+  assign advance      = !stage_v[10] || ready_i;
+  assign key_match    = key_loaded_q && (key_i == rk[0]);
+  assign ready_o      = !expanding_q && key_match && advance;
+  assign start_expand = valid_i && !expanding_q && !key_match && pipe_empty;
+
   assign data_o  = stage_q[10];
   assign valid_o = stage_v[10];
-  assign ready_o = schedule_ready_q & (~stage_v[10] | ready_i);
 
-  // ---------- Sequential -----------------------------------------------------
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
-      schedule_ready_q <= 1'b0;
-      expand_q         <= 4'd0;
-      last_key_q       <= '0;
+      key_loaded_q <= 1'b0;
+      expanding_q  <= 1'b0;
+      expand_q     <= 4'd0;
       for (int i = 0; i <= 10; i++) begin
         rk[i]      <= '0;
         stage_q[i] <= '0;
         stage_v[i] <= 1'b0;
       end
     end else begin
-      // Key schedule machine: when key changes, restart expansion.
-      if (valid_i && (key_i != last_key_q) && (expand_q == 4'd0) && schedule_ready_q) begin
-        rk[0]            <= key_i;
-        last_key_q       <= key_i;
-        schedule_ready_q <= 1'b0;
-        expand_q         <= 4'd0;
-      end else if (!schedule_ready_q) begin
+      if (start_expand) begin
+        rk[0]        <= key_i;
+        key_loaded_q <= 1'b1;
+        expanding_q  <= 1'b1;
+        expand_q     <= 4'd0;
+      end else if (expanding_q) begin
         rk[expand_q + 4'd1] <= kx_out;
         if (expand_q == 4'd9) begin
-          schedule_ready_q <= 1'b1;
-          expand_q         <= 4'd0;
+          expanding_q <= 1'b0;
+          expand_q    <= 4'd0;
         end else begin
           expand_q <= expand_q + 4'd1;
         end
-      end else if (valid_i && (last_key_q == '0) && (rk[0] == '0)) begin
-        // Cold-start: first key ever
-        rk[0]      <= key_i;
-        last_key_q <= key_i;
-        schedule_ready_q <= 1'b0;
-        expand_q   <= 4'd0;
       end
 
-      // Pipeline advance — only when downstream can accept (ready_i high or stage 10 empty).
-      if (~stage_v[10] | ready_i) begin
-        // stage 0
-        if (valid_i && schedule_ready_q && (key_i == last_key_q)) begin
-          stage_q[0] <= data_i ^ rk[0];
-          stage_v[0] <= 1'b1;
-        end else begin
-          stage_v[0] <= 1'b0;
-        end
-        // stages 1..10
+      if (advance) begin
+        stage_v[0] <= valid_i && ready_o;
+        if (valid_i && ready_o) stage_q[0] <= data_i ^ rk[0];
         for (int i = 1; i <= 10; i++) begin
           stage_q[i] <= round_out[i];
           stage_v[i] <= stage_v[i-1];
