@@ -81,7 +81,7 @@ module aes_core_pipelined (
   logic advance, key_match, start_expand;
   assign advance      = !stage_v[10] || ready_i;
   assign key_match    = key_loaded_q && (key_i == rk[0]);
-  assign ready_o      = !expanding_q && key_match && advance;
+  assign ready_o      = rst_ni && !expanding_q && key_match && advance;  // no transfer while in reset
   assign start_expand = valid_i && !expanding_q && !key_match && pipe_empty;
 
   assign data_o  = stage_q[10];

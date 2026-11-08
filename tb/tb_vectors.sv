@@ -53,6 +53,8 @@ module tb_vectors;
   // valid_i is driven at random during reset: ready_o must stay low.
   task automatic reset(input int cycles);
     @(negedge clk); rst_ni = 0; ready_i = 0;
+    #1;
+    if (ready_o) fail("ready_o high in the cycle reset was asserted");
     repeat (cycles) begin
       valid_i = 1'($urandom_range(0, 1)); key_i = rnd128(); data_i = rnd128();
       @(negedge clk); #1;
@@ -170,6 +172,19 @@ module tb_vectors;
     stream("zero key (VarTxt)", VARTXT_FIRST, VARTXT_LAST, 128, 0, 0);
     stream("new key every block", RANDOM_FIRST, RANDOM_FIRST + 255, 256, 0, 0);
     stream("new key every block, back-pressure", RANDOM_FIRST, RANDOM_FIRST + 255, 256, 30, 30);
+    // Reset with a full pipeline and valid_i high, then stream again: no stale
+    // output may appear and the next blocks must be correct.
+    for (int r = 0; r < 8; r++) begin
+      @(negedge clk); ready_i = 1;
+      repeat (12 + r) begin
+        valid_i = 1; key_i = vec[3*FIXED_KEY_FIRST]; data_i = rnd128();
+        @(negedge clk);
+      end
+      reset((r % 3) + 1);
+      #1;
+      if (valid_o) fail("pipelined: valid_o high after reset");
+      stream($sformatf("after reset %0d", r), FIXED_KEY_FIRST, FIXED_KEY_LAST, 32, 20, 20);
+    end
   endtask
 
   initial begin
