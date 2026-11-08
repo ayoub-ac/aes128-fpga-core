@@ -94,15 +94,15 @@ synth:
 	    | tee synth_ice40.log
 	$(YOSYS) -p "read_verilog -sv $(RTL_BASIC); hierarchy -top aes_core; synth_ecp5 -top aes_core -abc9; stat" \
 	    | tee synth_ecp5.log
-	$(YOSYS) -p "read_verilog -sv $(RTL_BASIC); hierarchy -top aes_core; synth_xilinx -top aes_core; stat" \
+	$(YOSYS) -p "read_verilog -sv $(RTL_BASIC); hierarchy -top aes_core; synth_xilinx -flatten -top aes_core; stat" \
 	    | tee synth_xilinx.log
 
 synth-pipelined:
-	$(YOSYS) -p "read_verilog -sv $(RTL_PIPELINED); hierarchy -top aes_core_pipelined; synth_xilinx -top aes_core_pipelined; stat" \
+	$(YOSYS) -p "read_verilog -sv $(RTL_PIPELINED); hierarchy -top aes_core_pipelined; synth_xilinx -flatten -top aes_core_pipelined; stat" \
 	    | tee synth_pipelined_xilinx.log
 
 synth-secure:
-	$(YOSYS) -p "read_verilog -sv $(RTL_SECURE); hierarchy -top aes_core_secure; synth_xilinx -top aes_core_secure; stat" \
+	$(YOSYS) -p "read_verilog -sv $(RTL_SECURE); hierarchy -top aes_core_secure; synth_xilinx -flatten -top aes_core_secure; stat" \
 	    | tee synth_secure_xilinx.log
 
 # ---------- Cross-toolchain synthesis report --------------------------------
@@ -121,7 +121,7 @@ clean:
 	rm -rf obj_dir obj_dir_secure test.log test_secure.log \
 	    synth_ice40.log synth_ecp5.log synth_xilinx.log \
 	    synth_pipelined_xilinx.log synth_secure_xilinx.log \
-	    synth_report/ SYNTH_REPORT.md
+	    synth_report/
 
 regen_vectors:
-	python -c "import sys; sys.path.insert(0,'tb'); exec(open('tb/gen_random_vectors.py').read())" > tb/random_vectors.h
+	python3 -c "import sys; sys.path.insert(0,'tb'); exec(open('tb/gen_random_vectors.py').read())" > tb/random_vectors.h
