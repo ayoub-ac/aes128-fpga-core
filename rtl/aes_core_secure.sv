@@ -1,32 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later OR LicenseRef-Commercial
-// AES-128 iterative core with side-channel countermeasures (FIPS-197).
+// AES-128 iterative core (FIPS-197) with a fault-detecting round counter.
 //
-// This is a HARDENED variant of aes_core. It implements:
+// Differences from aes_core, and what they do and do not provide:
 //
-//   1. State-level Boolean masking. Each cycle the registered cipher state is
-//      stored as two shares (state_xor_mask, mask). The mask is refreshed per
-//      block from random_i. This raises the bar against simple power analysis
-//      on the state register's transitions, but does NOT mask the S-box LUT
-//      transition itself; see SECURITY.md for the full threat model.
+//   1. Duplicated round counter. A second copy of round_q is compared every
+//      cycle outside S_IDLE; a mismatch sets the sticky fault_o and halts the
+//      FSM until reset. It detects a corruption of one counter copy (make
+//      test-secure forces one); other registers are not duplicated.
 //
-//   2. Duplicated round counter. A redundant copy of round_q is compared every
-//      cycle. Any mismatch raises fault_o and halts the FSM (the operation
-//      must be restarted via reset). This defends against single-bit fault
-//      injection on the counter (e.g., laser, EMFI on the FF).
+//   2. Masked state register. The state is stored XOR a per-block mask taken
+//      from random_i. The same mask is kept for all rounds, and the round
+//      logic works on the unmasked state, so the Hamming distance between
+//      successive register values equals that of the unmasked state. This
+//      gives no protection against power or EM analysis; treat the core as
+//      unprotected against side channels.
 //
-//   3. Constant-time FSM. No data-dependent branches; every block takes the
-//      exact same number of cycles regardless of key or plaintext content.
+//   3. The key is expanded for every block, so every block takes the same
+//      number of cycles (valid_o 20 cycles after the accepting edge). The
+//      cycle count does not depend on key or data.
 //
-//   4. Dummy operations on idle cycles. Toggling activity that flattens the
-//      power profile during S_DONE / S_IDLE waits.
-//
-// Limitations (read SECURITY.md for full disclosure):
-//   * The internal S-box is NOT a masked S-box. A dedicated masked-S-box
-//     scheme (e.g. RSM, Canright-masked, threshold-implementation) would be
-//     required to claim DPA resistance on the S-box transition itself.
-//   * No higher-order DPA protection.
-//   * No EM analysis / template attack protection.
-//   * Power balancing here is simple toggle activity; not differential routing.
+//   4. data_o and the state are cleared when the output is consumed and on a
+//      fault.
 
 module aes_core_secure (
   input  logic         clk_i,

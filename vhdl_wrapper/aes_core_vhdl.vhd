@@ -3,9 +3,10 @@
 -- VHDL-2008 wrapper for the SystemVerilog aes_core module.
 --
 -- This entity exposes the AES-128 core's port list in VHDL syntax. The
--- architecture instantiates the SystemVerilog module by component name; mixed-
--- language elaboration is supported natively by Vivado, Quartus, ModelSim /
--- Questa, and Aldec, and via the GHDL VHPI bridge for open simulation.
+-- architecture instantiates the SystemVerilog module by component name, so
+-- it needs a tool that elaborates mixed VHDL / SystemVerilog designs. In this
+-- repository the wrapper is only analysed with GHDL (make vhdl-test); it has
+-- not been simulated or synthesised together with the core.
 --
 -- Status: WRAPPER ONLY. The cipher logic itself remains in SystemVerilog
 -- (rtl/*.sv). A native VHDL port of the datapath is listed as future work in

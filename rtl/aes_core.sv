@@ -4,9 +4,10 @@
 // Architecture: 1 round per cycle, shared encrypt/decrypt datapath. The 11
 // round keys are stored, so a block with the same key as the previous one
 // skips the key expansion.
-// Latency from the accepting clock edge to valid_o: 11 cycles when key_i
-// equals the previous block's key, 21 cycles otherwise (10 cycles of key
-// expansion). The first block after reset always expands the key.
+// Latency: valid_o rises 10 clock cycles after the edge that accepted the
+// block when key_i equals the stored key, and 20 cycles otherwise (10 cycles
+// of key expansion first), so the result can be taken on the 11th / 21st
+// rising edge. A reset clears the stored key.
 //
 // Handshake:
 //   * Master presents key_i, data_i, encrypt_i and asserts valid_i.

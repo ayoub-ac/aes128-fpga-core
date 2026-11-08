@@ -5,11 +5,9 @@
 //   state -> SubBytes -> ShiftRows -> MixColumns -> AddRoundKey
 //   final round (round 10) skips MixColumns
 //
-// Inverse round (decrypt) using "Equivalent Inverse Cipher" structure simplified
-// here as per-round InvShiftRows + InvSubBytes + AddRoundKey + InvMixColumns,
-// with first decrypt round skipping InvMixColumns. We implement the classic
-// (non-equivalent) inverse cipher: state -> InvShiftRows -> InvSubBytes ->
-// AddRoundKey -> InvMixColumns. This matches FIPS-197 section 5.3 ordering.
+// Inverse round (decrypt), the FIPS-197 section 5.3 inverse cipher (not the
+// equivalent inverse cipher): state -> InvShiftRows -> InvSubBytes ->
+// AddRoundKey -> InvMixColumns; the final round skips InvMixColumns.
 //
 // The state is 128 bits laid out as the AES state matrix in column-major order,
 // MSB-first byte 0 = state[0,0]. We use byte index s[i] where i = row + 4*col.
