@@ -35,3 +35,5 @@ incremental_db/
 Thumbs.db
 # Private runbook — owner-only, never publish
 LAUNCH.md
+# Vector regression build
+build/

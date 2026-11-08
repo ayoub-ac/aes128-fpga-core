@@ -18,6 +18,7 @@ YOSYS     ?= yosys
 GHDL      ?= ghdl
 VIVADO    ?= vivado
 QUARTUS   ?= quartus_sh
+PYTHON    ?= python3
 
 RTL_BASIC := \
     rtl/aes_sbox.sv \
@@ -48,7 +49,7 @@ TB_SECURE_CPP := tb/sim_secure.cpp
 
 VFLAGS := -Wall -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-HIERBLOCK -Wno-UNOPTPUBLIC
 
-.PHONY: lint sim test sim-secure test-secure test-all \
+.PHONY: lint sim test sim-secure test-secure test-all test-vectors \
         synth synth-pipelined synth-secure synth_report \
         vhdl-test clean regen_vectors
 
@@ -86,7 +87,28 @@ test-secure: sim-secure
 	./obj_dir_secure/Vaes_core_secure_tb | tee test_secure.log
 	@grep -q "+PASS all secure" test_secure.log && echo "SECURE TESTS PASSED" || (echo "SECURE TESTS FAILED" && exit 1)
 
-test-all: test test-secure
+test-all: test test-secure test-vectors
+
+# ---------- Independent vector regression -----------------------------------
+# tb/tb_vectors.sv checks the three cores against scripts/gen_vectors.py
+# (FIPS-197, VarTxt, VarKey and random vectors from the `cryptography`
+# package), with random gaps, back-pressure, key changes and mid-operation
+# resets. Needs python3 with `cryptography` (pip install cryptography).
+VECTOR_RANDOM ?= 2000
+VECTOR_RTL := rtl/aes_sbox.sv rtl/aes_inv_sbox.sv rtl/aes_key_expand.sv rtl/aes_round.sv \
+              rtl/aes_core.sv rtl/aes_core_secure.sv rtl/aes_core_pipelined.sv
+
+build/vectors.hex: scripts/gen_vectors.py
+	@mkdir -p build
+	$(PYTHON) scripts/gen_vectors.py --out $@ --random $(VECTOR_RANDOM)
+
+test-vectors: build/vectors.hex
+	@set -e; for v in 0 1 2; do \
+	    $(VERILATOR) --binary --timing -Wno-fatal -Wno-lint -Wno-style --top-module tb_vectors \
+	        -GVARIANT=$$v -Mdir build/vec_$$v -o sim tb/tb_vectors.sv $(VECTOR_RTL) > build/vec_$$v.build.log; \
+	    (cd build && ./vec_$$v/sim) | tee build/vec_$$v.log | grep -E '^(FAIL|STREAM|RESULT)'; \
+	    grep -q 'errors=0 ' build/vec_$$v.log || { echo "VECTOR TESTS FAILED (variant $$v)"; exit 1; }; \
+	done; echo "VECTOR TESTS PASSED"
 
 # ---------- Open synthesis (Yosys) ------------------------------------------
 synth:
@@ -121,7 +143,7 @@ clean:
 	rm -rf obj_dir obj_dir_secure test.log test_secure.log \
 	    synth_ice40.log synth_ecp5.log synth_xilinx.log \
 	    synth_pipelined_xilinx.log synth_secure_xilinx.log \
-	    synth_report/
+	    synth_report/ build/
 
 regen_vectors:
-	python3 -c "import sys; sys.path.insert(0,'tb'); exec(open('tb/gen_random_vectors.py').read())" > tb/random_vectors.h
+	$(PYTHON) -c "import sys; sys.path.insert(0,'tb'); exec(open('tb/gen_random_vectors.py').read())" > tb/random_vectors.h
