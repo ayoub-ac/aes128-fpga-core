@@ -1,169 +1,106 @@
 # Security model
 
-This document describes what `aes_core_secure` is designed to defend against,
-what it is NOT designed to defend against, and how to evaluate the claims.
+This document states what the cores do and do not protect. In short:
+**none of the three cores is protected against side-channel analysis**.
+`aes_core_secure` adds fault detection on its round counter and nothing
+else of security value. If your threat model includes power, EM or fault
+attacks, this core is not enough.
 
-If you need a side-channel-resistant AES core for a real product, read this
-whole document and decide whether the threat model matches your deployment.
-Don't trust marketing copy; trust the threat model and your own evaluation.
+## Functional correctness
 
-## What's in the secure variant
+All three cores match the FIPS-197 algorithm in simulation: FIPS-197
+Appendix B and C.1, SP 800-38A F.1.1, the VarTxt and VarKey sweeps and
+2000 random vectors from OpenSSL (through the Python `cryptography`
+package), in both directions for the iterative cores (`make test`,
+`make test-secure`, `make test-vectors`). This is not a NIST CAVP
+validation, and nothing has been run on hardware.
 
-`rtl/aes_core_secure.sv` is intended to be a hardened sibling of `aes_core` (not evaluated). Same
-algorithm (AES-128, FIPS-197), same I/O contract, plus a `random_i` input and
-a `fault_o` output. The countermeasures it is intended to implement (none has
-been evaluated) are:
+## aes_core_secure
 
-### 1. State-level Boolean masking (1st-order)
+### Duplicated round counter (what it provides)
 
-The 128-bit cipher state register stores `state_xor_mask` and the mask
-separately. The mask is sampled from `random_i` at the start of each block and
-is wiped at completion. The unmasked output is only revealed on the final
-round.
+The round counter exists twice (`round_q`, `round_q2`). Outside `S_IDLE` the
+two are compared every cycle; a mismatch moves the FSM to `S_FAULT`, sets the
+sticky `fault_o`, clears `data_o` and the state, and holds `ready_o` low until
+reset. `make test-secure` forces a corruption of `round_q2` in the middle of
+an operation and checks `fault_o`, the halt and the recovery after reset.
 
-**What this is intended to protect (not evaluated):** simple power-analysis attacks that target the cipher
-state register's transition activity. Two encryptions of the same plaintext
-under the same key will toggle the state register through different bit
-patterns depending on `random_i`, breaking the simple correlation model.
+It detects a fault that changes one counter copy. It does not detect the
+same fault on both copies, or faults on the state register, the key store or
+the FSM state, which are not duplicated; differential fault attacks on the
+rounds remain possible.
 
-**What this does NOT protect:** the S-box LUT transitions themselves are still
-computed on unmasked data inside the combinational round logic. A power
-attacker measuring leakage at the S-box (rather than at the state register)
-can still recover the key via 1st-order DPA. To close this gap requires a
-masked S-box (e.g. RSM, Canright-masked, or a threshold implementation), which
-is a future variant.
+### Masked state register (what it does not provide)
 
-The reference scheme is Boolean masking as described in:
-- E. Trichina, "Combinational Logic Design for AES SubByte Transformation on
-  Masked Data," IACR ePrint 2003/236.
-- We implement only the state-register-level part of that scheme; we do not
-  yet implement the masked combinational SubBytes that the full scheme
-  requires for 1st-order DPA resistance on the S-box.
+The state register holds `state ^ mask`, with the mask taken from `random_i`
+when the block is accepted. The same mask is used for all ten rounds, and the
+round logic works on the unmasked state (`state_masked_q ^ mask_q`). As a
+result:
 
-### 2. Duplicated round counter with fault detector
+- the Hamming distance between successive register values,
+  `(s_i ^ m) ^ (s_i+1 ^ m) = s_i ^ s_i+1`, is the same as without the mask;
+- the S-boxes, MixColumns and the key schedule process unmasked values;
+- the round keys are stored unmasked.
 
-The round counter is duplicated as `round_q` and `round_q2`. Every clock the
-two are compared; a mismatch transitions the FSM into `S_FAULT` and asserts
-`fault_o`. The output is wiped and `ready_o` is held low until the next reset.
+So the masking gives no meaningful protection against power or EM analysis.
+`make test-secure` only checks that the mask does not change the result and
+that the register contents differ between masks. Proper protection would
+need masked S-boxes (for example a threshold implementation) and fresh
+randomness per round, which this core does not have.
 
-**What this is intended to protect (not evaluated):** single-bit fault injection on either of the two round
-counter flip-flops (laser fault injection, EMFI, voltage glitching that
-flips an FF). An attacker who can flip exactly one bit in `round_q` to skip a
-round (a classic AES fault attack) is detected.
+### Clearing
 
-**What this does NOT protect:** simultaneous identical fault injection on
-both counters. Faults on the cipher state register itself (still possible to
-mount differential fault attacks on AES rounds). For full DFA resistance the
-state register would also need to be duplicated and compared.
+When the result is taken, `aes_core_secure` clears `data_o` and the state
+register; a fault clears them too. The round keys stay in registers until
+the next block or a reset.
 
-### 3. Constant-time FSM
+## Timing
 
-The FSM is intended to be constant-time; not evaluated. It is designed with
-no data-dependent branches, so that every block takes the same 22 cycles
-regardless of key or plaintext content (10 expand + 10 round + 2 handshake),
-with no early-exit or fast-path branches. The back-to-back test in the basic
-testbench checks for a constant 22 cycles/block across distinct inputs;
-results not independently confirmed.
+- `aes_core_secure`: every block takes 20 cycles from acceptance to
+  `valid_o`, independent of key and data (measured on 6774 operations in
+  `make test-vectors`).
+- `aes_core`: 10 cycles when the key equals the stored key, 20 otherwise.
+  The cycle count reveals whether consecutive blocks use the same key, not
+  the key or data values.
+- `aes_core_pipelined`: one block per cycle with a fixed key; a key change
+  stalls the input for the pipeline drain plus 10 cycles.
 
-**What this is intended to protect (not evaluated):** timing attacks that
-observe block-completion latency.
+## Key storage
 
-### 4. Constant-cycle output reveal
+`aes_core` and `aes_core_secure` keep the 11 round keys in flip-flops after
+the operation; `aes_core` reuses them for the next block with the same key,
+and `aes_core_pipelined` keeps them until the key changes. There is no
+separate key-zeroization input: assert `rst_ni` to clear the stored key
+schedule.
 
-The unmasked ciphertext/plaintext is revealed only in `S_DONE`, on the cycle
-after the final round. The output and mask are wiped on transition back to
-`S_IDLE`. This is intended to prevent an attacker from reading partial state
-via `data_o`; not evaluated.
+## Not covered
 
-## What's NOT covered (be honest)
+- Power and EM analysis (DPA, CPA, template attacks), at any order.
+- Fault injection other than on one copy of the `aes_core_secure` round
+  counter.
+- Glitch attacks on clock or supply, and invasive attacks.
+- Leakage through the system around the core (buses, memories).
 
-This list is deliberately exhaustive so that users can evaluate fit:
+## Compliance
 
-- **Higher-order DPA**: 2nd-order and above attacks combine multiple leakage
-  points and are not addressed by 1st-order Boolean masking. Mitigation
-  requires higher-order masking schemes; not implemented.
-- **EM (electromagnetic) analysis** and **template attacks**: not specifically
-  countered. Power balancing in this design is limited to keeping the FSM
-  active during all cycles; differential routing and constant-Hamming-weight
-  encodings are out of scope.
-- **Cache / micro-architectural side channels**: not applicable (this is RTL,
-  not software), but if you place this core into a system with a shared bus
-  or shared memory, those channels can leak.
-- **S-box DPA**: as noted above, the S-box LUT is unmasked in the
-  combinational round logic. Attackers measuring at the S-box transition can
-  recover the key with standard CPA / DPA techniques.
-- **Multi-bit fault injection** on the round counter (faults that flip both
-  copies identically): not detected.
-- **Fault injection on the state register**: not duplicated, not protected.
-- **Power glitch attacks** on the FF setup/hold window are out of scope.
-- **Invasive attacks** (decap, microprobing) are entirely out of scope.
-
-If your deployment threat model includes any of the above and the rest of
-your system relies on AES integrity, this core is not enough on its own.
-
-## Compliance claims
-
-- **FIPS-197 conformance**: not validated. The RTL implements the FIPS-197
-  AES-128 algorithm (not validated). Published NIST test vectors (FIPS-197
-  Appendix B / Appendix C, NIST SP 800-38A F.1.1) are included in the
-  testbench; results not independently confirmed.
-- **FIPS-140-2 / FIPS-140-3 certification**: NOT claimed. FIPS-140 is a
-  module-level certification covering far more than the algorithm
-  (RNG quality, key zeroization, role-based authentication, physical
-  security, etc.) and is the responsibility of the integrator. This core
-  implements one of the building blocks; it is not by itself a FIPS-140
-  cryptographic module.
+- **FIPS-197**: the algorithm is implemented and checked in simulation as
+  described above; not validated by NIST CAVP.
+- **FIPS 140-2 / 140-3**: not claimed. FIPS 140 certifies a whole
+  cryptographic module (RNG, key management, roles, physical security), not
+  an AES core.
 - **Common Criteria**: not evaluated.
-- **NIST CAVP test certificate**: not validated. NIST FIPS-197 known-answer
-  tests are included in the simulation testbench (results not independently
-  confirmed), and the RTL is not registered with NIST CAVP. CAVP requires a
-  test harness running on the certified platform, which is the integrator's
-  responsibility.
 
-## Test methodology used to validate the security claims
+## Using the cores
 
-The Verilator testbench in `tb/sim_secure.cpp` contains the checks below. The
-checks are included; results not independently confirmed.
-
-1. **Functional correctness on NIST test vectors** with a non-zero `random_i`.
-   Verifies that masking does not change the produced ciphertext.
-   (Suite `S1`.)
-2. **Mask invariance**: same key + same plaintext, four different `random_i`
-   values, same ciphertext expected. (Suite `S2`.)
-3. **Internal state differs**: snapshot the registered `state_masked_q` mid-
-   operation under two distinct `random_i` values; the registered state must
-   differ. This is a direct test that masking is actually applied to the
-   register, not optimized away. (Suite `S3`.)
-4. **Fault injection**: corrupt `round_q2` mid-operation through Verilator's
-   public-flat-rw access, verify `fault_o` rises and `ready_o` falls. Then
-   reset, verify `fault_o` clears and the core encrypts correctly post-reset.
-   (Suite `S4`.)
-
-We do NOT run experimental DPA / CPA against the bitstream. The 1st-order DPA
-resistance claim on the state register is **design intent**, derived from the
-masking scheme. An experimentally verified claim would require a real FPGA,
-an oscilloscope, and a trace-collection campaign measured in days or weeks;
-none has been done.
-
-In other words: the secure variant is "designed to resist 1st-order DPA on
-the cipher state register per the published Boolean masking scheme" — not
-"DPA-certified."
-
-## How to use the secure core safely
-
-1. Drive `random_i` from a true random number generator (not a PRNG seeded
-   from the same key). Use a fresh 128 bits per block. If your platform has
-   a hardware TRNG, use it; if not, do not deploy the secure variant.
-2. Hold `rst_ni` low for ≥4 cycles after power-on and before the first block.
-3. Watch `fault_o`. If it ever rises, treat it as a security event: the most
-   likely cause is fault injection. Reset and consider whether to re-encrypt.
-4. The secure variant is not a substitute for protocol-level measures like
-   nonce uniqueness in CTR mode or AEAD authentication tags. Use it inside an
-   AEAD construction (GCM, CCM, ChaCha20-Poly1305-style alternatives) for
-   real systems.
+1. Treat all three cores as unprotected against side channels.
+2. If you use `aes_core_secure` for fault detection, watch `fault_o`: a rise
+   means the round counter copies disagreed. Reset before further use.
+   `random_i` can be any value; it does not affect the result.
+3. Assert `rst_ni` to clear stored keys when a key must no longer be held.
+4. Use the core inside a mode with authentication (for example GCM) in real
+   systems; the core itself is single-block AES (ECB).
 
 ## Reporting issues
 
-Found a bug, a side channel we missed, or a discrepancy with FIPS-197?
-Open a GitHub issue; do not post confidential details in it. Coordinated
-disclosure welcome. We do not currently offer a bug bounty.
+Found a bug or a discrepancy with FIPS-197? Open a GitHub issue; do not post
+confidential details in it. No bug bounty is offered.

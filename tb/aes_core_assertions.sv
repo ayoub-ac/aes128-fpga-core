@@ -4,21 +4,19 @@
 // aes_core_tb so the testbench can reuse the same protocol checks regardless
 // of which simulator runs them.
 //
-// Properties enforced:
-//   P_RESET_TO_IDLE      after reset deassert, FSM is IDLE within 1 cycle
-//   P_VALID_AFTER_REQ    valid_o never rises until >=11 cycles since the most
-//                        recent accepted command
-//   P_READY_HANDSHAKE    ready_o is high iff the core can accept the next cmd
-//   P_DATA_STABLE        data_o is stable across stall cycles (valid_o &&
-//                        !ready_i) - back-pressure correctness
-//   P_VALID_HOLD         valid_o is held until ready_i is observed
-//   P_ROUND_BOUND        round counter never exceeds 10
+// Properties checked on every rising edge outside reset (5):
+//   a_valid_after_req      valid_o is not seen before 11 edges after the most
+//                          recent accepted block (10 cycles of rounds)
+//   a_data_stable          data_o is stable while valid_o && !ready_i
+//   a_valid_hold           valid_o is held until ready_i is seen
+//   a_round_bound          the round counter never exceeds 10
+//   a_no_ready_when_valid  ready_o is low while valid_o is high
 //
-// Both Verilator 5.x and Vivado xsim accept this SVA syntax. Properties are
-// wrapped in `ifndef SYNTHESIS so they are stripped on synthesis flows.
+// Checked with Verilator 5.053 (--assert). Properties are wrapped in
+// `ifndef SYNTHESIS so they are stripped on synthesis flows.
 
 module aes_core_assertions #(
-  parameter int MIN_LATENCY = 11   // floor: 10 rounds + 1 for FSM transition
+  parameter int MIN_LATENCY = 11   // edges from acceptance to the first edge that sees valid_o (stored key)
 ) (
   input logic         clk_i,
   input logic         rst_ni,

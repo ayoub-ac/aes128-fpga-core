@@ -7,9 +7,9 @@ ECP5 PFUMX / L6MUX21 and Xilinx MUXF7 / MUXF8 cells, which are not LUTs.
 
 | Toolchain       | Target                  | Result |
 |-----------------|-------------------------|--------|
-| Yosys synth_ice40  | iCE40                | 7534 LUT / 1674 FF / 32 BRAM / 0 MUX |
-| Yosys synth_ecp5   | ECP5                 | 24113 LUT / 1930 FF / 0 BRAM / 11510 MUX |
-| Yosys synth_xilinx | Xilinx 7-series      | 5714 LUT / 1930 FF / 0 BRAM / 549 MUX |
+| Yosys synth_ice40  | iCE40                | 7902 LUT / 1674 FF / 32 BRAM / 0 MUX |
+| Yosys synth_ecp5   | ECP5                 | 25086 LUT / 1930 FF / 0 BRAM / 12313 MUX |
+| Yosys synth_xilinx | Xilinx 7-series      | 5437 LUT / 1930 FF / 0 BRAM / 537 MUX |
 | Vivado synth_design | Artix-7 xc7a35tcsg324-1 | (skipped: vivado not on PATH) |
 | Quartus             | Cyclone V 5CSEMA5F31C6  | (skipped: quartus_sh not on PATH) |
 

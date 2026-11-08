@@ -9,11 +9,9 @@ VHDL design that does not want to touch SystemVerilog directly.
 **Wrapper only.** The cipher datapath (SubBytes, ShiftRows, MixColumns, key
 schedule, FSM) lives in `rtl/*.sv` and is instantiated as a SystemVerilog
 black-box, so the toolchain must support mixed-language elaboration. The
-wrapper has not been tested with any simulator or synthesiser.
-
-A pure VHDL re-implementation of the cipher core is on the roadmap (scope: parity with `rtl/aes_core.sv`, including the same testbench
-checks). Until then, treat this directory as a binding layer, not as a
-second implementation.
+wrapper is analysed with GHDL (`make vhdl-test`); it has not been simulated
+or synthesised together with the core. There is no VHDL implementation of
+the cipher itself.
 
 ## Usage
 
@@ -38,17 +36,17 @@ vlog -sv rtl/aes_sbox.sv rtl/aes_inv_sbox.sv rtl/aes_key_expand.sv \
 vcom -2008 vhdl_wrapper/aes_core_vhdl.vhd
 ```
 
-### GHDL + Verilator (open-source co-sim)
+### GHDL + Verilator (open source, analysis only)
 
-GHDL compiles the VHDL side, Verilator compiles the SV side, and the two are
-linked through GHDL's VHPI bridge. The provided `make vhdl-test` target wraps
-this; run it from the repository root:
+`make vhdl-test` analyses the wrapper with GHDL and lints the SystemVerilog
+core with Verilator. It does not run a mixed-language simulation; that needs
+a simulator with mixed VHDL / SystemVerilog support.
 
 ```
 make vhdl-test
 ```
 
-The target is a no-op (with a notice) if `ghdl` is not on `$PATH`.
+The target is skipped with a notice if `ghdl` is not on `$PATH`.
 
 ## Instantiation example
 
@@ -79,8 +77,8 @@ end architecture;
 
 ## What this wrapper does NOT change
 
-* Latency, throughput, area: intended to be identical to `aes_core.sv`
-  (unverified). There is no additional pipeline stage.
+* Latency, throughput, area: the wrapper adds no logic or pipeline stage;
+  the behaviour is that of `aes_core.sv`.
 * Endianness: bit 127 is byte 0, MSB-first, exactly as documented in
   `PORT_DESCRIPTION.md`.
 * Reset polarity: still active-low synchronous (`rst_ni`).

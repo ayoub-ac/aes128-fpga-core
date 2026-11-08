@@ -1,6 +1,8 @@
 # Port description
 
-This document is the contract for `aes_core`. Bit widths, polarity, timing, and the handshake protocol.
+This document is the contract for `aes_core` and its two variants: bit
+widths, polarity, timing and the handshake. Every timing statement below is
+checked in simulation by `make test`, `make test-vectors` or `make waves`.
 
 ## Module declaration
 
@@ -23,82 +25,94 @@ module aes_core (
 
 | Signal      | Dir | Width | Description |
 |-------------|-----|-------|-------------|
-| `clk_i`     | in  | 1     | System clock. All flops in the core sample on the rising edge. |
-| `rst_ni`    | in  | 1     | Synchronous, active-low reset. Hold low for >= 4 clocks before first valid command. |
-| `key_i`     | in  | 128   | AES-128 cipher key. Sampled on the cycle that `valid_i && ready_o`. Endianness: bit 127 is the most-significant bit of the leftmost (byte 0) of the 16-byte key, matching FIPS-197 convention. |
-| `data_i`    | in  | 128   | Plaintext (when `encrypt_i=1`) or ciphertext (when `encrypt_i=0`). Same endianness as `key_i`. |
-| `encrypt_i` | in  | 1     | Mode select. `1` = encrypt `data_i` to ciphertext. `0` = decrypt `data_i` to plaintext. Sampled with `valid_i`. |
-| `valid_i`   | in  | 1     | Master asserts when key/data are valid. Asserting when `ready_o == 0` is allowed but the transfer does not complete until `ready_o` rises. |
-| `ready_o`   | out | 1     | Core ready to accept a new block. `valid_i && ready_o` = transfer accepted. |
-| `data_o`    | out | 128   | Output ciphertext or plaintext. Stable while `valid_o` is asserted. Same endianness as `data_i`. |
-| `valid_o`   | out | 1     | Core has produced a result. Master must observe `valid_o` and assert `ready_i` to consume. |
-| `ready_i`   | in  | 1     | Master asserts to consume the output. The core advances to its idle state on the cycle after `valid_o && ready_i`. |
+| `clk_i`     | in  | 1     | System clock. Every flop in the core samples on the rising edge. |
+| `rst_ni`    | in  | 1     | Synchronous, active-low reset. One rising edge with `rst_ni` low resets the core; `ready_o` is low while `rst_ni` is low. |
+| `key_i`     | in  | 128   | AES-128 key, sampled on the accepting edge. Bit 127 is the most significant bit of byte 0, as in FIPS-197. |
+| `data_i`    | in  | 128   | Plaintext (`encrypt_i = 1`) or ciphertext (`encrypt_i = 0`). Same byte order as `key_i`. |
+| `encrypt_i` | in  | 1     | 1 = encrypt, 0 = decrypt. Sampled with `valid_i`. |
+| `valid_i`   | in  | 1     | A block is offered. It may be raised while `ready_o` is low; the transfer completes on the first rising edge where `ready_o` is also high. |
+| `ready_o`   | out | 1     | The core accepts a block on this edge. |
+| `data_o`    | out | 128   | Result. Held while `valid_o && !ready_i`. Not meaningful while `valid_o` is low. |
+| `valid_o`   | out | 1     | A result is available and stays available until it is taken. |
+| `ready_i`   | in  | 1     | The consumer takes the result on a rising edge where `valid_o && ready_i`. |
 
 ## Handshake
 
-The core uses the same valid/ready pattern as AXI-Stream:
-
-- A transfer happens on a rising clock edge where the asserting party has its `valid` high and the receiving party has its `ready` high.
-- Either side may stall by deasserting its half of the handshake.
-
-### Input handshake (master -> core)
+Both sides use the valid/ready rule of AXI-Stream: a transfer happens on a
+rising edge where the sender's `valid` and the receiver's `ready` are both
+high.
 
 ```
-clk         _|‾|_|‾|_|‾|_|‾|_
-ready_o    1   1   1   0   ...
-valid_i    0   1   1   0   ...
-key_i,
-data_i,    -   K   K   -
-encrypt_i
-
-           ^ here master drives K and asserts valid_i; core's ready_o is also high,
-             so the transfer is accepted on this rising edge. The core lowers
-             ready_o and starts processing.
+clk        _|‾|_|‾|_|‾|_|‾|_|‾|_
+valid_i     0   1   1   0          block offered
+ready_o     1   1   0   0          accepted on the 2nd edge, then busy
+            ...
+valid_o     0   0   1   1   0      result available
+ready_i     0   0   0   1   0      taken on the 4th edge
+data_o      -   -   D   D   -
 ```
 
-### Output handshake (core -> master)
-
-```
-clk         _|‾|_|‾|_|‾|_|‾|_
-valid_o    0   1   1   0   ...
-ready_i    -   0   1   -   ...
-data_o     -   D   D   -
-
-           ^ core asserts valid_o with data; master eventually asserts
-             ready_i; transfer happens; core returns to idle.
-```
+The plots in [`docs/waves`](docs/waves) show the real waveforms, including
+the cycle counts.
 
 ## Timing
 
-- **Latency**: from the cycle `valid_i && ready_o` is captured to the cycle `valid_o` rises is approximately 22 cycles in this MVP. (10 cycles to expand the key schedule, 10 cycles for cipher rounds, plus FSM transitions.)
-- **Throughput**: one block per ~22 cycles. At 50 MHz that is ~290 Mbps; at 100 MHz, ~580 Mbps (unverified estimates derived from the cycle count).
-- **Back-to-back**: yes — the master can present a new `(key, data)` on the same cycle it consumes the previous output (`valid_o && ready_i` and immediately `valid_i` for the next block).
+`aes_core` (the iterative core):
+
+- `valid_o` rises 10 cycles after the accepting edge when `key_i` equals the
+  stored key, and 20 cycles after it otherwise (10 cycles of key expansion
+  first). The result can be taken on the 11th (21st) edge.
+- `ready_o` rises on the cycle after the result is taken, so back-to-back
+  blocks with one key take 12 cycles each, and 22 cycles each when every
+  block has a new key.
+- The first block after a reset always expands its key.
+- The cycle count depends only on whether the key changed, never on the key
+  or data values.
+
+`aes_core_secure` expands the key for every block: `valid_o` 20 cycles after
+the accepting edge, 22 cycles per block back to back.
+
+`aes_core_pipelined` (encrypt only, `encrypt_i` ignored):
+
+- With the loaded key it accepts one block per cycle; `valid_o` for a block
+  rises 10 cycles after its accepting edge.
+- When `valid_o && !ready_i`, the whole pipeline holds and `ready_o` is low.
+- A block with a different key is not accepted (`ready_o` low) until the
+  blocks already in the pipeline have been taken; then the new key is
+  expanded in 10 cycles and the block is accepted. Blocks never mix keys.
+- `ready_o` depends combinationally on `key_i` and `ready_i`.
 
 ## Reset
 
-- `rst_ni` is **synchronous**, **active-low**.
-- Drive `rst_ni = 0` for at least four `clk_i` rising edges before the first command.
-- During reset all output signals are low, all internal state is cleared. The previously stored key is wiped — issue a fresh key on the next command.
+- `rst_ni` is synchronous and active low. One rising edge with `rst_ni` low
+  returns the core to idle; holding it longer is harmless.
+- `ready_o` is low as long as `rst_ni` is low, in all three cores, so no
+  block is accepted during reset. `valid_o` is low from the first rising
+  edge with `rst_ni` low.
+- A reset discards the block in progress and the stored key schedule.
 
-## Endianness clarification
+## Byte order
 
-A 128-bit AES block is conventionally written as 16 bytes in left-to-right order. We adopt the FIPS-197 convention: byte 0 (the leftmost byte of the standard hex string) is in bits `[127:120]`, byte 15 (the rightmost) is in bits `[7:0]`.
+A 128-bit AES block is written as 16 bytes from left to right. Byte 0 (the
+leftmost byte of the usual hex string) is in bits `[127:120]` and byte 15 in
+bits `[7:0]`, as in FIPS-197.
 
-Example (NIST SP 800-38A F.1.1 #1):
 ```
-plaintext  = 0x6bc1bee22e409f96e93d7e117393172a
-                ^^                           ^^
-                byte 0 -> bits [127:120]     byte 15 -> bits [7:0]
+plaintext  = 0x6bc1bee22e409f96e93d7e117393172a      (SP 800-38A F.1.1 #1)
+               ^^ byte 0 -> [127:120]        ^^ byte 15 -> [7:0]
 ```
 
-If your bus is little-endian, you must swap bytes before driving `data_i`.
+Swap the bytes before `data_i` if your bus is little-endian.
 
 ## Clock domain
 
-Single clock domain. `clk_i` clocks every flop in the design. If your system is multi-clock, instantiate this core in its own domain and use a CDC FIFO on `data_i` / `data_o`.
+One clock domain: `clk_i` clocks every flop. In a multi-clock system, put the
+core in its own domain and cross with a CDC FIFO.
 
-## Synthesis attributes
+## Synthesis
 
-The core uses no vendor-specific attributes. It is intended to synthesize with Yosys (`synth_ice40`, `synth_ecp5`, `synth_xilinx`) and with Vivado (default flow); not independently confirmed.
-
-The S-box and inverse-S-box are written as `case` statements; Yosys infers a LUT, Vivado infers either LUTs or a distributed-RAM ROM depending on the device.
+The RTL uses no vendor attributes. Yosys 0.70 synthesises all three cores for
+iCE40, ECP5 and Xilinx 7-series (`make synth_report`, `make synth-secure`,
+`make synth-pipelined`); Vivado and Quartus have not been tried. The S-boxes
+are `case` tables, which Yosys maps to LUTs. Numbers are in
+[`SYNTH_REPORT.md`](SYNTH_REPORT.md) and [`README.md`](README.md#measured-numbers).

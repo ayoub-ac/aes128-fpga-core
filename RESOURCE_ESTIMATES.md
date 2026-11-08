@@ -1,84 +1,81 @@
-# Resource estimates
+# Resources and timing
 
-Numbers below are unverified estimates attributed to Yosys 0.33 generic synthesis (`make synth`); they have not been independently reproduced. They are pre-place-and-route, so the vendor flow (nextpnr / Vivado / Diamond) will usually pack tighter, especially on iCE40 where SB_LUT4 + carry chains and BRAM packing reduce visible LUT count after PnR. Run `make synth` for authoritative numbers on your toolchain version.
+All numbers below were measured with the OSS CAD Suite 2026-11-01 build
+(Yosys 0.70, nextpnr 0.11) on the v1.1.0 RTL. Synthesis counts are flattened
+and taken before place and route. Vivado, Quartus and Diamond were not run.
 
-## Summary (post-Yosys, pre-PnR)
+## Synthesis (Yosys)
 
-| Target                         | LUT (logic)   | FF      | BRAM        | Notes                                                                 |
-|--------------------------------|---------------|---------|-------------|-----------------------------------------------------------------------|
-| Lattice iCE40 UP5K             | 6481 SB_LUT4  | 1673 FF | 32 SB_RAM40_4K | The 11-key x 128-bit round-key bank with a dynamic index packs into BRAM, freeing a lot of logic. |
-| Lattice ECP5 LFE5UM-25         | 24859 LUT4 + 10445 PFUMX + 6796 L6MUX21 | 1929 FF | 0 | ECP5 synth_ecp5 in 0.33 does not infer distributed RAM for the round-key bank, so the dynamic mux explodes. Expect 4-5x shrink after `nextpnr-ecp5` packing or by manually inferring `ram_distrib` on the schedule. |
-| Xilinx Artix-7 XC7A35T         | 393 LUT6 + 643 LUT5 + 1036 LUT4 + 258 LUT2 + 256 LUT1 = 2586 LUT total | 1673 FF | 0 | Vivado will further pack into LUT6 + LUT6_2 and use SLICEM distributed RAM for the schedule, so post-Vivado is typically ~900-1100 LUT6. |
-| Gowin GW1NR-9 (Tang Nano 9K)   | not characterized in this run | ~1700 FF | 0 | Use `synth_gowin` or the Gowin IDE; resource shape is comparable to iCE40 UP5K. |
+| Core | Target | LUT | MUX cells | FF | Block RAM |
+|---|---|---|---|---|---|
+| `aes_core` | iCE40 (`synth_ice40`) | 7902 SB_LUT4 | - | 1674 | 32 SB_RAM40_4K |
+| `aes_core` | ECP5 (`synth_ecp5 -abc9`) | 25086 LUT4 | 12313 PFUMX / L6MUX21 | 1930 | 0 |
+| `aes_core` | Xilinx 7-series (`synth_xilinx -flatten`) | 5437 LUT1-6 | 537 MUXF7 / MUXF8 | 1930 | 0 |
+| `aes_core_secure` | Xilinx 7-series | 7055 LUT1-6 | 274 MUXF7 / MUXF8 | 1805 | 0 |
+| `aes_core_pipelined` | Xilinx 7-series | 11538 LUT1-6 | 2490 MUXF7 / MUXF8 | 4757 | 0 |
 
-These numbers cover the iterative MVP.
+Reproduce with `make synth_report` (basic core, writes `SYNTH_REPORT.md`),
+`make synth-secure` and `make synth-pipelined`.
 
-## Variants
+ABC, the logic optimiser inside Yosys, gives results that move by a few
+percent with small RTL changes: an earlier revision of the same branch
+synthesised `aes_core` to 24113 LUT4 on ECP5 and 7534 on iCE40.
 
-Both variants share the same `aes_round` / `aes_sbox` infrastructure as
-the basic core, so the deltas below are RTL-overhead only. All figures in this
-section are unverified estimates.
+## Device fit
 
-### Pipelined (`aes_core_pipelined`)
+| Device | Capacity | `aes_core` |
+|---|---|---|
+| iCE40 UP5K | 5280 LUT4, 30 RAM blocks | does not fit |
+| iCE40 HX8K | 7680 LUT4, 32 RAM blocks | does not fit (103 % of the LUTs) |
+| ECP5 LFE5U-25F | 24288 LUT4 | does not fit (103 %); an earlier revision placed at 99 % |
+| ECP5 LFE5U-45F | 43848 LUT4 | places at 57 % |
+| Artix-7 xc7a35t | 20800 LUT6 | not placed (Yosys count 5437 LUT) |
 
-| Target          | LUT (Yosys)     | FF      | Throughput      |
-|-----------------|-----------------|---------|-----------------|
-| Xilinx 7-series | ~23.0k LUT total | ~3.6k FF | 1 block/cycle steady-state (~22x basic) |
+## Place and route (nextpnr-ecp5)
 
-Trade-off: ~4.2x area for ~22x throughput (unverified estimate). Encrypt-only; decrypt falls back to
-the iterative core. Schedule re-expansion is amortized by holding `ready_o` low
-during the 10-cycle expansion, so a stable key sees no per-block overhead.
+`aes_core`, LFE5U-45F, CABGA381 package, out of context, 50 MHz target,
+seeds 1 to 3:
 
-### Secure (`aes_core_secure`)
+| Seed | Fmax |
+|---|---|
+| 1 | 34.57 MHz |
+| 2 | 33.52 MHz |
+| 3 | 32.21 MHz |
 
-| Target          | LUT (Yosys)     | FF      | Cycles/block | Throughput |
-|-----------------|-----------------|---------|--------------|------------|
-| Xilinx 7-series | ~5.8k LUT total | ~1.8k FF | 22 (same as basic) | ~870 Mbps @ 150 MHz |
+The 50 MHz target is not met. In the nextpnr critical-path report (seed 1)
+the path starts at the round counter and the state register, runs through
+the round-key selection and the S-boxes of `aes_round`, and ends at the
+state and output registers.
+iCE40 and Xilinx were not placed and routed. The 391 I/O bits of the core
+are left unplaced (`--out-of-context`); a real design adds its own I/O.
 
-Adds ~7-8% area for state-level Boolean masking, duplicated round counter
-(fault detector), and constant-time FSM. See `SECURITY.md` for the full threat
-model; none of these countermeasures has been evaluated. Throughput is intended
-to be unchanged (unverified).
+## Throughput
 
-## Caveat on raw Yosys numbers
+Cycle counts are measured in simulation; the Mbit/s figures are computed
+from them and from the ECP5 Fmax above, not measured on hardware.
 
-Yosys generic synthesis in 0.33 does not always infer distributed RAM for the round-key schedule (`rk_q[0..10]` indexed by a runtime variable). On boards where it does (iCE40 UP5K above), the LUT count drops sharply. On targets where it does not (ECP5 generic flow), the dynamic mux is built out of logic and looks very large. The vendor PnR steps (nextpnr-ecp5 / Vivado) recover most of this. No variant in this repository adds an explicit `(* ram_style = "distributed" *)` attribute on the schedule; adding one is a possible way to get a tighter pre-PnR number on ECP5.
+| Core | Cycles per block, back to back | At 33 MHz |
+|---|---|---|
+| `aes_core`, one key | 12 | about 350 Mbit/s |
+| `aes_core`, a new key every block | 22 | about 190 Mbit/s |
+| `aes_core_secure` | 22 | about 190 Mbit/s |
+| `aes_core_pipelined`, one key | 1 | not placed |
 
 ## What dominates the area
 
-- **11 round keys x 128 bits = 1408 FFs** for storing the expanded key schedule. This is by far the largest FF cost. A future "key-cached" variant can keep this and skip re-expansion when the key does not change.
-- **Two S-box LUTs** (forward and inverse) instantiated per byte lane. Encrypt and decrypt share the round, so the round logic instantiates 16 forward S-boxes (SubBytes) and 16 inverse S-boxes (InvSubBytes). Future area optimization: share S-boxes across encrypt/decrypt by switching the lookup table.
-- **MixColumns / InvMixColumns** combinational matrix. InvMixColumns coefficients {0x09, 0x0b, 0x0d, 0x0e} are decomposed into nested `xtime` chains with shared `2a, 4a, 8a` per byte, which Yosys is expected to map to ~2-3 LUTs per coefficient byte rather than a generic GF(2^8) multiplier loop (unverified estimate).
+- 36 table S-boxes: 16 forward and 16 inverse in the shared round, and 4 in
+  the key expansion. Each is a 256-entry `case` table. On iCE40 Yosys puts
+  the 32 round S-boxes in the 32 block RAMs; everywhere else they become
+  LUTs.
+- The 11 x 128-bit round-key store (1408 flip-flops) and the 11:1 selection
+  of the round key.
+- MixColumns and InvMixColumns, written as `xtime` chains.
 
-## What you can do to shrink it
-
-No byte-serial build is included in this repository. A design that processes one column per cycle would trade more cycles per block for lower LUT count on a small iCE40.
-
-## Frequency
-
-The figures below are unverified estimates; no place-and-route timing has been confirmed.
-
-- iCE40 UP5K, default toolchain (Yosys + nextpnr), no constraints: ~50 MHz typical, push to 60 MHz with retiming.
-- ECP5: ~120 MHz typical, ~150 MHz with effort.
-- Artix-7 -1 speed grade: ~150 MHz typical, ~200 MHz with effort and timing constraints.
-
-The combinational path through SubBytes -> ShiftRows -> MixColumns -> AddRoundKey is the critical path. Retiming the round-key XOR into the next stage's flop helps on Xilinx; on Yosys+nextpnr you may want to split MixColumns over two cycles for higher Fmax (no such variant is included in this repository).
+Ways to make it smaller, none of which is implemented: one S-box set shared
+by encryption and decryption (a GF(2^8) inverter with the forward and inverse
+affine maps), a column-serial datapath, or expanding round keys on the fly
+for encryption only.
 
 ## Power
 
-Power has not been characterized. Static power is dominated by the FPGA itself.
-
-## How to reproduce
-
-```bash
-make synth            # basic core, all three targets
-make synth-secure     # secure variant, Xilinx
-make synth-pipelined  # pipelined variant, Xilinx
-```
-
-This runs Yosys with `synth_ice40`, `synth_ecp5` (with `-abc9`), and `synth_xilinx` and dumps statistics in `synth_*.log`. The stats line at the bottom tells you cell counts per primitive.
-
-For end-to-end place-and-route numbers (post-PnR LUT counts and timing), run the vendor flow:
-- iCE40 / ECP5: nextpnr-ice40 / nextpnr-ecp5 with Yosys output (open toolchain).
-- Xilinx: Vivado with a project pointing at the `rtl/` files.
-- Lattice Diamond / Radiant: project with `rtl/` added.
+Not characterised.
