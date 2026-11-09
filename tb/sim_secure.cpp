@@ -236,9 +236,9 @@ static void test_fault_detection(Vaes_core_secure_tb* dut) {
     // Run a few cycles to be in S_EXPAND or S_RUN
     for (int i = 0; i < 14; i++) tick(dut);
 
-    // Inject fault: corrupt round_q2 via flat-public access.
+    // Inject fault: flip one bit of the inverted counter copy (flat-public access).
     auto* root = dut->rootp;
-    root->aes_core_secure_tb__DOT__u_dut__DOT__round_q2 = 0xF;  // garbage
+    root->aes_core_secure_tb__DOT__u_dut__DOT__round_n_q ^= 0x1;
     tick(dut);
 
     if (!dut->fault_o) {

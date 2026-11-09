@@ -3,10 +3,13 @@
 //
 // Differences from aes_core, and what they do and do not provide:
 //
-//   1. Duplicated round counter. A second copy of round_q is compared every
-//      cycle outside S_IDLE; a mismatch sets the sticky fault_o and halts the
-//      FSM until reset. It detects a corruption of one counter copy (make
-//      test-secure forces one); other registers are not duplicated.
+//   1. Duplicated round counter. A second, inverted copy of round_q is
+//      compared every cycle outside S_IDLE; a mismatch sets the sticky
+//      fault_o and halts the FSM until reset. It detects a corruption of one
+//      counter copy (make test-secure forces one); other registers are not
+//      duplicated. The copy has its own decrement logic and keep/preserve
+//      attributes so that synthesis does not merge it with round_q (an
+//      identical copy is merged by Quartus and the detector disappears).
 //
 //   2. Masked state register. The state is stored XOR a per-block mask taken
 //      from random_i. The same mask is kept for all rounds, and the round
@@ -64,13 +67,22 @@ module aes_core_secure (
   } state_e;
 
   state_e state_q, state_d;
-  logic [3:0] round_q,  round_d;
-  logic [3:0] round_q2, round_d2;     // duplicated round counter
+  (* keep = "true", dont_touch = "true", preserve, syn_preserve = 1 *)
+  logic [3:0] round_q;
+  logic [3:0] round_d;
+  // Second copy of the round counter, stored inverted and decremented by its
+  // own logic, so it is never identical to round_q. Synthesis tools merge
+  // registers with identical inputs; that would remove the detector.
+  (* keep = "true", dont_touch = "true", preserve, syn_preserve = 1 *)
+  logic [3:0] round_n_q;
+  logic [3:0] round_n_d;
   logic       encrypt_q;
   logic [127:0] mask_q,  mask_d;       // current state mask
   logic [127:0] state_masked_q, state_masked_d;   // state ^ mask
   logic [127:0] data_out_q, data_out_d;
-  logic         fault_q, fault_d;
+  (* keep = "true", dont_touch = "true", preserve, syn_preserve = 1 *)
+  logic         fault_q;
+  logic         fault_d;
 
   // Round-key storage
   logic [127:0] rk_q [0:10];
@@ -123,13 +135,13 @@ module aes_core_secure (
 
   // ---------- Round counter sanity (fault detector) --------------------------
   logic counter_fault;
-  assign counter_fault = (round_q != round_q2);
+  assign counter_fault = (round_q != ~round_n_q);
 
   // ---------- FSM next-state -------------------------------------------------
   always_comb begin
     state_d        = state_q;
     round_d        = round_q;
-    round_d2       = round_q2;
+    round_n_d      = round_n_q;
     state_masked_d = state_masked_q;
     mask_d         = mask_q;
     data_out_d     = data_out_q;
@@ -155,7 +167,7 @@ module aes_core_secure (
               state_masked_d = data_i ^ random_i;
             end
             round_d  = 4'd0;
-            round_d2 = 4'd0;
+            round_n_d = 4'hF;
             state_d  = S_EXPAND;
           end
         end
@@ -168,11 +180,11 @@ module aes_core_secure (
               state_masked_d = state_masked_q ^ next_rk;
             end
             round_d  = 4'd0;
-            round_d2 = 4'd0;
+            round_n_d = 4'hF;
             state_d  = S_RUN;
           end else begin
             round_d  = round_q  + 4'd1;
-            round_d2 = round_q2 + 4'd1;
+            round_n_d = round_n_q - 4'd1;
           end
         end
 
@@ -187,11 +199,11 @@ module aes_core_secure (
             // Wipe mask (it was for this block only).
             mask_d     = '0;
             round_d    = 4'd0;
-            round_d2   = 4'd0;
+            round_n_d  = 4'hF;
             state_d    = S_DONE;
           end else begin
             round_d  = round_q  + 4'd1;
-            round_d2 = round_q2 + 4'd1;
+            round_n_d = round_n_q - 4'd1;
           end
         end
 
@@ -221,7 +233,7 @@ module aes_core_secure (
     if (!rst_ni) begin
       state_q        <= S_IDLE;
       round_q        <= 4'd0;
-      round_q2       <= 4'd0;
+      round_n_q      <= 4'hF;
       encrypt_q      <= 1'b0;
       state_masked_q <= '0;
       mask_q         <= '0;
@@ -231,7 +243,7 @@ module aes_core_secure (
     end else begin
       state_q        <= state_d;
       round_q        <= round_d;
-      round_q2       <= round_d2;
+      round_n_q      <= round_n_d;
       state_masked_q <= state_masked_d;
       mask_q         <= mask_d;
       data_out_q     <= data_out_d;

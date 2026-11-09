@@ -19,11 +19,22 @@ validation, and nothing has been run on hardware.
 
 ### Duplicated round counter (what it provides)
 
-The round counter exists twice (`round_q`, `round_q2`). Outside `S_IDLE` the
-two are compared every cycle; a mismatch moves the FSM to `S_FAULT`, sets the
+The round counter exists twice: `round_q`, and `round_n_q`, which holds the
+inverted count and is decremented by its own logic. Outside `S_IDLE` the two
+are compared every cycle; a mismatch moves the FSM to `S_FAULT`, sets the
 sticky `fault_o`, clears `data_o` and the state, and holds `ready_o` low until
-reset. `make test-secure` forces a corruption of `round_q2` in the middle of
-an operation and checks `fault_o`, the halt and the recovery after reset.
+reset. `make test-secure` flips a bit of `round_n_q` in the middle of an
+operation and checks `fault_o`, the halt and the recovery after reset.
+
+The two copies must survive synthesis. In v1.1.0 the copy was identical to
+`round_q`; Quartus Prime merged the duplicate registers and reported
+`fault_o` stuck at GND, so the detector did not exist in the netlist. Since
+v1.1.1 the copy is encoded differently and both counters and `fault_q` carry
+`keep`, `dont_touch` and `preserve` attributes. Quartus Prime Lite 25.1
+(Cyclone V) now keeps `round_q`, `round_n_q` and `fault_q` and no longer
+reports `fault_o` as stuck. Vivado was not run. If you use another tool,
+check its report for removed or merged registers before relying on
+`fault_o`.
 
 It detects a fault that changes one counter copy. It does not detect the
 same fault on both copies, or faults on the state register, the key store or
