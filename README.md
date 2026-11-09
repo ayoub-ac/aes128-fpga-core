@@ -8,7 +8,7 @@
 > from an independent reference (OpenSSL through the Python `cryptography`
 > package), encrypting and decrypting, on all three cores, plus the
 > original directed tests. It has been compiled with Quartus Prime Lite for
-> Cyclone V, but not run on FPGA hardware, synthesised with Vivado,
+> Cyclone V and with Vivado for Artix-7, but not run on FPGA hardware,
 > validated under NIST CAVP/CMVP, or evaluated for
 > side-channel or fault-injection resistance. It was written with AI
 > assistance. No support or maintenance is provided. See
@@ -101,7 +101,7 @@ ECP5 CABGA381, out of context, seeds 1 to 3.
 | `aes_core` | iCE40 | 7902 LUT4 | 1674 | 32 SB_RAM40_4K | not placed |
 | `aes_core` | ECP5 | 25086 LUT4 + 12313 PFUMX/L6MUX21 | 1930 | 0 | LFE5U-45F (57 %): 32.2 - 34.6 MHz |
 | `aes_core` | Xilinx 7-series | 5437 LUT6 + 537 MUXF7/8 | 1930 | 0 | not placed |
-| `aes_core_secure` | Xilinx 7-series | 7055 LUT6 + 274 MUXF7/8 | 1805 | 0 | not placed |
+| `aes_core_secure` | Xilinx 7-series | 7284 LUT6 + 311 MUXF7/8 | 1805 | 0 | not placed |
 | `aes_core_pipelined` | Xilinx 7-series | 11538 LUT6 + 2490 MUXF7/8 | 4757 | 0 | not placed |
 
 - The basic core does **not** fit an iCE40 UP5K or HX8K (5280 / 7680 LUT4),
@@ -114,8 +114,11 @@ ECP5 CABGA381, out of context, seeds 1 to 3.
 - At 33 MHz on ECP5 the basic core moves 128 bits every 12 cycles with one
   key, about 350 Mbit/s (computed from the cycle count, not measured on
   hardware).
-- Vivado and Quartus were not run. See [`SYNTH_REPORT.md`](SYNTH_REPORT.md)
-  and [`RESOURCE_ESTIMATES.md`](RESOURCE_ESTIMATES.md).
+- Vendor tools, out of context, register to register: Vivado 2025.2 places
+  and routes the three cores on an Artix-7 xc7a35t-1 at 116 - 133 MHz
+  (`aes_core` 4155 LUT, 123.7 MHz), Quartus Prime Lite 25.1 on a Cyclone V
+  at 109 - 133 MHz. See [`RESOURCE_ESTIMATES.md`](RESOURCE_ESTIMATES.md)
+  and [`SYNTH_REPORT.md`](SYNTH_REPORT.md).
 
 ## Verification
 
@@ -133,10 +136,11 @@ Everything below runs in CI on every push (`.github/workflows/ci.yml`).
 
 ![aes_core_pipelined: key change](docs/waves/scen2_zoom_key_change.png)
 
-Quartus Prime Lite 25.1 compiled all three cores for Cyclone V (fit and
-timing, no hardware); see [`RESOURCE_ESTIMATES.md`](RESOURCE_ESTIMATES.md).
+Quartus Prime Lite 25.1 (Cyclone V) and Vivado 2025.2 (Artix-7) compiled
+all three cores out of context (place, route and timing, no hardware); see
+[`RESOURCE_ESTIMATES.md`](RESOURCE_ESTIMATES.md). These runs are not in CI.
 
-Not verified: FPGA hardware; Vivado; place and route on iCE40 or Xilinx; formal proofs (none exist); NIST CAVP/CMVP; power, EM and fault
+Not verified: FPGA hardware; place and route on iCE40; timing inside a full design with real I/O; formal proofs (none exist); NIST CAVP/CMVP; power, EM and fault
 attacks; mixed-language simulation of the VHDL wrapper.
 
 ## Variants

@@ -32,7 +32,9 @@ The two copies must survive synthesis. In v1.1.0 the copy was identical to
 v1.1.1 the copy is encoded differently and both counters and `fault_q` carry
 `keep`, `dont_touch` and `preserve` attributes. Quartus Prime Lite 25.1
 (Cyclone V) now keeps `round_q`, `round_n_q` and `fault_q` and no longer
-reports `fault_o` as stuck. Vivado was not run. If you use another tool,
+reports `fault_o` as stuck. Vivado 2025.2 (Artix-7) keeps them as well: four
+flip-flops for each of the two counters, plus `fault_q`, which drives
+`fault_o`. If you use another tool,
 check its report for removed or merged registers before relying on
 `fault_o`.
 

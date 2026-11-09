@@ -1,9 +1,9 @@
 # Resources and timing
 
 All numbers below were measured on the v1.1.1 RTL with the OSS CAD Suite
-2026-11-01 build (Yosys 0.70, nextpnr 0.11) and with Quartus Prime Lite
-25.1std.0 build 1129. Yosys counts are flattened and taken before place and
-route. Vivado and Diamond were not run.
+2026-11-01 build (Yosys 0.70, nextpnr 0.11), Quartus Prime Lite 25.1std.0
+build 1129 and Vivado ML Standard 2025.2 (Linux). Yosys counts are flattened
+and taken before place and route. Diamond was not run.
 
 ## Synthesis (Yosys)
 
@@ -31,7 +31,7 @@ synthesised `aes_core` to 24113 LUT4 on ECP5 and 7534 on iCE40.
 | ECP5 LFE5U-25F | 24288 LUT4 | does not fit (103 %); an earlier revision placed at 99 % |
 | ECP5 LFE5U-45F | 43848 LUT4 | places at 57 % |
 | Cyclone V 5CSEMA5F31C6 | 32070 ALM | places at 11 % (Quartus) |
-| Artix-7 xc7a35t | 20800 LUT6 | not placed (Yosys count 5437 LUT) |
+| Artix-7 xc7a35t | 20800 LUT6 | places at 20 % of the LUTs (Vivado) |
 
 ## Place and route (nextpnr-ecp5)
 
@@ -70,6 +70,29 @@ The 200 MHz constraint is not met by any core. Reproduce from an empty
 directory with
 `quartus_sh -t <repo>/scripts/quartus_compile.tcl <repo>/rtl aes_core`
 (the device and the clock period are optional third and fourth arguments).
+
+## Place and route (Vivado)
+
+Artix-7 xc7a35tcsg324-1, speed grade -1, out-of-context synthesis,
+`opt_design`, `place_design` and `route_design` with default directives,
+5 ns clock constraint on `clk_i`, no I/O constraints. Fmax is
+1000 / (5 - WNS) from the routed design, register to register. Out of
+context the clock source is not known (`HD.CLK_SRC` is unset), so clock skew
+is not estimated; inside a full design the result can differ. No block RAM
+or DSP is used.
+
+| Core | LUT | FF | F7 / F8 mux | Slices | WNS | Fmax |
+|---|---|---|---|---|---|---|
+| `aes_core` | 4155 (20 %) | 1685 | 908 / 233 | 1152 (14 %) | -3.084 ns | 123.70 MHz |
+| `aes_core_secure` | 4801 (23 %) | 1820 | 830 / 136 | 1414 (17 %) | -3.611 ns | 116.13 MHz |
+| `aes_core_pipelined` | 7796 (37 %) | 2838 | 2528 / 1152 | 2183 (27 %) | -2.529 ns | 132.82 MHz |
+
+Vivado uses 24 % (`aes_core`) to 34 % (`aes_core_secure`) fewer LUTs than
+the Yosys `synth_xilinx` counts above.
+
+Reproduce from an empty directory with
+`vivado -mode batch -source <repo>/scripts/vivado_compile.tcl -tclargs <repo>/rtl aes_core`
+(the part and the clock period are optional third and fourth arguments).
 
 ## Throughput
 

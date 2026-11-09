@@ -111,8 +111,13 @@ core in its own domain and cross with a CDC FIFO.
 
 ## Synthesis
 
-The RTL uses no vendor attributes. Yosys 0.70 synthesises all three cores for
-iCE40, ECP5 and Xilinx 7-series (`make synth_report`, `make synth-secure`,
-`make synth-pipelined`); Vivado and Quartus have not been tried. The S-boxes
-are `case` tables, which Yosys maps to LUTs. Numbers are in
-[`SYNTH_REPORT.md`](SYNTH_REPORT.md) and [`README.md`](README.md#measured-numbers).
+The only vendor attributes are in `aes_core_secure`: `keep`, `dont_touch`
+and `preserve` on the fault-detection registers, so that synthesis does not
+merge or remove them (see [`SECURITY.md`](SECURITY.md)). Yosys 0.70
+synthesises all three cores for iCE40, ECP5 and Xilinx 7-series
+(`make synth_report`, `make synth-secure`, `make synth-pipelined`); Quartus
+Prime Lite and Vivado place and route them out of context
+(`scripts/quartus_compile.tcl`, `scripts/vivado_compile.tcl`). The S-boxes
+are `case` tables, which every tool maps to LUTs. Numbers are in
+[`RESOURCE_ESTIMATES.md`](RESOURCE_ESTIMATES.md) and
+[`README.md`](README.md#measured-numbers).

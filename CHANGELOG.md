@@ -10,15 +10,23 @@
   was not affected, which is why `make test-secure` passed. The copy is now
   stored inverted with its own decrement logic, and both counters and
   `fault_q` carry `keep`, `dont_touch` and `preserve` attributes. Quartus
-  Prime Lite 25.1 keeps all three and no longer reports `fault_o` as stuck.
-  Quartus warns that it does not recognise `dont_touch`, which is meant for
-  Vivado.
+  Prime Lite 25.1 and Vivado 2025.2 keep all three, and Quartus no longer
+  reports `fault_o` as stuck. Quartus warns that it does not recognise
+  `dont_touch`, which is meant for Vivado.
 
 ### Added
 
-- `scripts/quartus_compile.tcl`: out-of-context Quartus Prime compile of one
-  core. `RESOURCE_ESTIMATES.md` lists the Cyclone V area and Fmax of the
-  three cores.
+- `scripts/quartus_compile.tcl` and `scripts/vivado_compile.tcl`:
+  out-of-context Quartus Prime and Vivado compiles of one core.
+  `RESOURCE_ESTIMATES.md` lists the Cyclone V and Artix-7 area and Fmax of
+  the three cores.
+
+### Documentation
+
+- `README.md` listed the v1.1.0 Yosys count of `aes_core_secure`; it now
+  gives the v1.1.1 count (7284 LUT6, 311 MUXF7/8).
+- `PORT_DESCRIPTION.md` said the RTL uses no vendor attributes; the secure
+  core has used them since this release.
 
 ## 1.1.0 (2026-11-08)
 
