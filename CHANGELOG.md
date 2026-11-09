@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.1 (unreleased)
+
+### Fixed
+
+- `aes_core_secure`: the duplicated round counter was an identical copy of
+  `round_q`. Quartus Prime merged the two registers, reported `fault_o` as
+  stuck at GND and removed the fault detector from the netlist; simulation
+  was not affected, which is why `make test-secure` passed. The copy is now
+  stored inverted with its own decrement logic, and both counters and
+  `fault_q` carry `keep`, `dont_touch` and `preserve` attributes. Quartus
+  Prime Lite 25.1 keeps all three and no longer reports `fault_o` as stuck.
+  Quartus warns that it does not recognise `dont_touch`, which is meant for
+  Vivado.
+
+### Added
+
+- `scripts/quartus_compile.tcl`: out-of-context Quartus Prime compile of one
+  core. `RESOURCE_ESTIMATES.md` lists the Cyclone V area and Fmax of the
+  three cores.
+
 ## 1.1.0 (2026-11-08)
 
 A check of v1.0.0 against an independent reference found the basic and

@@ -1,8 +1,9 @@
 # Resources and timing
 
-All numbers below were measured with the OSS CAD Suite 2026-11-01 build
-(Yosys 0.70, nextpnr 0.11) on the v1.1.0 RTL. Synthesis counts are flattened
-and taken before place and route. Vivado, Quartus and Diamond were not run.
+All numbers below were measured on the v1.1.1 RTL with the OSS CAD Suite
+2026-11-01 build (Yosys 0.70, nextpnr 0.11) and with Quartus Prime Lite
+25.1std.0 build 1129. Yosys counts are flattened and taken before place and
+route. Vivado and Diamond were not run.
 
 ## Synthesis (Yosys)
 
@@ -11,7 +12,7 @@ and taken before place and route. Vivado, Quartus and Diamond were not run.
 | `aes_core` | iCE40 (`synth_ice40`) | 7902 SB_LUT4 | - | 1674 | 32 SB_RAM40_4K |
 | `aes_core` | ECP5 (`synth_ecp5 -abc9`) | 25086 LUT4 | 12313 PFUMX / L6MUX21 | 1930 | 0 |
 | `aes_core` | Xilinx 7-series (`synth_xilinx -flatten`) | 5437 LUT1-6 | 537 MUXF7 / MUXF8 | 1930 | 0 |
-| `aes_core_secure` | Xilinx 7-series | 7055 LUT1-6 | 274 MUXF7 / MUXF8 | 1805 | 0 |
+| `aes_core_secure` | Xilinx 7-series | 7284 LUT1-6 | 311 MUXF7 / MUXF8 | 1805 | 0 |
 | `aes_core_pipelined` | Xilinx 7-series | 11538 LUT1-6 | 2490 MUXF7 / MUXF8 | 4757 | 0 |
 
 Reproduce with `make synth_report` (basic core, writes `SYNTH_REPORT.md`),
@@ -29,6 +30,7 @@ synthesised `aes_core` to 24113 LUT4 on ECP5 and 7534 on iCE40.
 | iCE40 HX8K | 7680 LUT4, 32 RAM blocks | does not fit (103 % of the LUTs) |
 | ECP5 LFE5U-25F | 24288 LUT4 | does not fit (103 %); an earlier revision placed at 99 % |
 | ECP5 LFE5U-45F | 43848 LUT4 | places at 57 % |
+| Cyclone V 5CSEMA5F31C6 | 32070 ALM | places at 11 % (Quartus) |
 | Artix-7 xc7a35t | 20800 LUT6 | not placed (Yosys count 5437 LUT) |
 
 ## Place and route (nextpnr-ecp5)
@@ -48,6 +50,26 @@ the round-key selection and the S-boxes of `aes_round`, and ends at the
 state and output registers.
 iCE40 and Xilinx were not placed and routed. The 391 I/O bits of the core
 are left unplaced (`--out-of-context`); a real design adds its own I/O.
+
+## Place and route (Quartus Prime Lite)
+
+Cyclone V 5CSEMA5F31C6 (the DE1-SoC device), full compile (analysis and
+synthesis, fitter, timing analyser), 200 MHz clock constraint on `clk_i`.
+Every port except `clk_i` is a virtual pin, so the numbers cover the core
+alone; `clk_i` sits on an ordinary pin and uses non-dedicated clock routing.
+Fmax is register to register from the timing analyser, for the slow 1100 mV
+85 °C and 0 °C models. No block RAM or DSP blocks are used.
+
+| Core | ALM | Registers | Fmax 85 °C | Fmax 0 °C |
+|---|---|---|---|---|
+| `aes_core` | 3661 (11 %) | 1674 | 110.33 MHz | 113.16 MHz |
+| `aes_core_secure` | 3769 (12 %) | 1807 | 108.65 MHz | 112.27 MHz |
+| `aes_core_pipelined` | 8622 (27 %) | 2833 | 133.42 MHz | 135.8 MHz |
+
+The 200 MHz constraint is not met by any core. Reproduce from an empty
+directory with
+`quartus_sh -t <repo>/scripts/quartus_compile.tcl <repo>/rtl aes_core`
+(the device and the clock period are optional third and fourth arguments).
 
 ## Throughput
 

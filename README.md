@@ -3,12 +3,13 @@
 [![CI](https://github.com/ayoub-ac/aes128-fpga-core/actions/workflows/ci.yml/badge.svg)](https://github.com/ayoub-ac/aes128-fpga-core/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later or commercial](https://img.shields.io/badge/license-GPL--3.0%20%7C%20commercial-blue.svg)](LICENSE.md)
 
-> **Status: verified in simulation only.** v1.1.0 passes FIPS-197
+> **Status: verified in simulation only.** v1.1.1 passes FIPS-197
 > Appendix B and C.1, the VarTxt and VarKey sweeps and 2000 random vectors
 > from an independent reference (OpenSSL through the Python `cryptography`
 > package), encrypting and decrypting, on all three cores, plus the
-> original directed tests. It has not been run on FPGA hardware, synthesised
-> with Vivado or Quartus, validated under NIST CAVP/CMVP, or evaluated for
+> original directed tests. It has been compiled with Quartus Prime Lite for
+> Cyclone V, but not run on FPGA hardware, synthesised with Vivado,
+> validated under NIST CAVP/CMVP, or evaluated for
 > side-channel or fault-injection resistance. It was written with AI
 > assistance. No support or maintenance is provided. See
 > [Verification](#verification) for what was and was not checked.
@@ -120,7 +121,7 @@ ECP5 CABGA381, out of context, seeds 1 to 3.
 
 Everything below runs in CI on every push (`.github/workflows/ci.yml`).
 
-| Check | What it covers | Result (v1.1.0) |
+| Check | What it covers | Result (v1.1.1) |
 |---|---|---|
 | `make lint` | Verilator `-Wall` on the three cores and the testbenches | clean |
 | `make test` | 10 directed groups: FIPS-197 B/C.1 and SP 800-38A F.1.1 vectors both ways, round trips, back-to-back timing, edge keys, 1000 random round trips, key changes, reset mid-operation, a 50-cycle stall, 100 vectors cross-checked with pycryptodome; 5 SVA properties every cycle; 9/9 coverage bins | pass |
@@ -132,8 +133,10 @@ Everything below runs in CI on every push (`.github/workflows/ci.yml`).
 
 ![aes_core_pipelined: key change](docs/waves/scen2_zoom_key_change.png)
 
-Not verified: FPGA hardware; Vivado and Quartus; place and route on iCE40 or
-Xilinx; formal proofs (none exist); NIST CAVP/CMVP; power, EM and fault
+Quartus Prime Lite 25.1 compiled all three cores for Cyclone V (fit and
+timing, no hardware); see [`RESOURCE_ESTIMATES.md`](RESOURCE_ESTIMATES.md).
+
+Not verified: FPGA hardware; Vivado; place and route on iCE40 or Xilinx; formal proofs (none exist); NIST CAVP/CMVP; power, EM and fault
 attacks; mixed-language simulation of the VHDL wrapper.
 
 ## Variants
